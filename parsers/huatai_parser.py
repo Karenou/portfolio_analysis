@@ -21,8 +21,8 @@ from models import BaseParser, HoldingRecord
 
 logger = logging.getLogger(__name__)
 
-# Securities to skip (not real investment holdings)
-SKIP_CODES = {"888880"}  # 标准券 (standard bond collateral for repo)
+# Securities to keep but classify specially
+CASH_CODES = {"888880"}  # 标准券 (standard bond collateral for repo) -> cash
 
 
 def _is_nan(val) -> bool:
@@ -149,10 +149,10 @@ class HuataiParser(BaseParser):
             current_price = _parse_number(row.iloc[10])
             currency_str = _clean_str(row.iloc[12])
 
-            # Skip special entries
-            if code in SKIP_CODES:
-                logger.debug(f"Skipping special code: {code} ({name})")
-                continue
+            # Mark special entries for later classification
+            is_special_cash = code in CASH_CODES
+            if is_special_cash:
+                logger.debug(f"Found cash-equivalent code: {code} ({name})")
 
             # Map currency
             currency = "CNY"
@@ -169,7 +169,7 @@ class HuataiParser(BaseParser):
                 market_value=market_value,
                 currency=currency,
                 source=self.platform_name,
-                raw_info={"cost_price": cost_price},
+                raw_info={"cost_price": cost_price, "is_cash_equivalent": is_special_cash},
             )
             records.append(record)
 
