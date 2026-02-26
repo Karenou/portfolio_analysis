@@ -1,0 +1,46 @@
+{
+  "510300": {
+    "name": "300ETF",
+    "sub_type": "etf"
+  },
+  "513010": {
+    "name": "港股科技",
+    "sub_type": "etf"
+  },
+  "513050": {
+    "name": "中概互联",
+    "sub_type": "etf"
+  },
+  "513060": {
+    "name": "恒生医疗",
+    "sub_type": "etf"
+  },
+  "513970": {
+    "name": "恒生消费",
+    "sub_type": "etf"
+  },
+  "516120": {
+    "name": "化工50",
+    "sub_type": "etf"
+  },
+  "520990": {
+    "name": "国新红利",
+    "sub_type": "etf"
+  },
+  "159545": {
+    "name": "港股红利",
+    "sub_type": "etf"
+  },
+  "159869": {
+    "name": "游戏ETF",
+    "sub_type": "etf"
+  },
+  "016778": {
+    "name": "[省心投]长城收益宝货币C",
+    "sub_type": "money_fund"
+  },
+  "888880": {
+    "name": "标准券",
+    "sub_type": "mixed_fund"
+  }
+}

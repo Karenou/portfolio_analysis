@@ -1,0 +1,274 @@
+{
+  "000628": {
+    "equity_pct": 0.8042061611374408,
+    "bond_pct": 0.0,
+    "cash_pct": 0.19214060031595578,
+    "commodity_pct": 0.0,
+    "other_pct": 0.003653238546603475,
+    "is_estimated": false
+  },
+  "006484": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9996751928542429,
+    "cash_pct": 0.00016240357287860334,
+    "commodity_pct": 0.0,
+    "other_pct": 0.00016240357287860334,
+    "is_estimated": false
+  },
+  "011066": {
+    "equity_pct": 0.8042061611374408,
+    "bond_pct": 0.0,
+    "cash_pct": 0.19214060031595578,
+    "commodity_pct": 0.0,
+    "other_pct": 0.003653238546603475,
+    "is_estimated": false
+  },
+  "019518": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9700711181351245,
+    "cash_pct": 0.003852232319241407,
+    "commodity_pct": 0.0,
+    "other_pct": 0.02607664954563414,
+    "is_estimated": false
+  },
+  "012323": {
+    "equity_pct": 0.9409186011756501,
+    "bond_pct": 0.0,
+    "cash_pct": 0.0590813988243499,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "162412": {
+    "equity_pct": 0.9409186011756501,
+    "bond_pct": 0.0,
+    "cash_pct": 0.0590813988243499,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "002708": {
+    "equity_pct": 0.8512651922693764,
+    "bond_pct": 0.0,
+    "cash_pct": 0.14674237895995218,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0019924287706714486,
+    "is_estimated": false
+  },
+  "519915": {
+    "equity_pct": 0.8805851328490397,
+    "bond_pct": 0.0,
+    "cash_pct": 0.11603144591501642,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0033834212359438753,
+    "is_estimated": false
+  },
+  "000051": {
+    "equity_pct": 0.9346795601061813,
+    "bond_pct": 0.034793325748957146,
+    "cash_pct": 0.030527114144861586,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "011309": {
+    "equity_pct": 0.8805851328490397,
+    "bond_pct": 0.0,
+    "cash_pct": 0.11603144591501642,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0033834212359438753,
+    "is_estimated": false
+  },
+  "270042": {
+    "equity_pct": 0.9185074626865671,
+    "bond_pct": 0.0,
+    "cash_pct": 0.08149253731343283,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "100050": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9700711181351245,
+    "cash_pct": 0.003852232319241407,
+    "commodity_pct": 0.0,
+    "other_pct": 0.02607664954563414,
+    "is_estimated": false
+  },
+  "006327": {
+    "equity_pct": 0.9356475034812015,
+    "bond_pct": 0.02983887010145216,
+    "cash_pct": 0.03451362641734634,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "001180": {
+    "equity_pct": 0.9481400219407601,
+    "bond_pct": 0.007080881619627008,
+    "cash_pct": 0.04477909643961305,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "164906": {
+    "equity_pct": 0.6565746512318195,
+    "bond_pct": 0.0,
+    "cash_pct": 0.07509646779459779,
+    "commodity_pct": 0.0,
+    "other_pct": 0.26832888097358265,
+    "is_estimated": false
+  },
+  "000369": {
+    "equity_pct": 0.8759543877045116,
+    "bond_pct": 0.0,
+    "cash_pct": 0.06703024293505205,
+    "commodity_pct": 0.0,
+    "other_pct": 0.05701536936043629,
+    "is_estimated": false
+  },
+  "001064": {
+    "equity_pct": 0.9433436224235786,
+    "bond_pct": 0.0,
+    "cash_pct": 0.0566563775764214,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "012348": {
+    "equity_pct": 0.9310651765404016,
+    "bond_pct": 0.0,
+    "cash_pct": 0.06893482345959845,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "110027": {
+    "equity_pct": 0.15562489998399742,
+    "bond_pct": 0.8212514002240359,
+    "cash_pct": 0.0036805888942230756,
+    "commodity_pct": 0.0,
+    "other_pct": 0.01944311089774364,
+    "is_estimated": false
+  },
+  "000071": {
+    "equity_pct": 0.9095148328207163,
+    "bond_pct": 0.0,
+    "cash_pct": 0.09048516717928365,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "000968": {
+    "equity_pct": 0.9422178020885131,
+    "bond_pct": 0.0,
+    "cash_pct": 0.05629040278468424,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0014917951268025858,
+    "is_estimated": false
+  },
+  "000727": {
+    "equity_pct": 0.9303132434575734,
+    "bond_pct": 0.0,
+    "cash_pct": 0.06919111816019033,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0004956383822363205,
+    "is_estimated": false
+  },
+  "100038": {
+    "equity_pct": 0.9213780918727915,
+    "bond_pct": 9.815469179426775e-05,
+    "cash_pct": 0.07754220651747153,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0009815469179426776,
+    "is_estimated": false
+  },
+  "002286": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9566196631414022,
+    "cash_pct": 0.03946337641989816,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0039169604386995694,
+    "is_estimated": false
+  },
+  "004419": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9902193242442204,
+    "cash_pct": 0.00642165579924916,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0033590199565303298,
+    "is_estimated": false
+  },
+  "340001": {
+    "equity_pct": 0.28739294961163114,
+    "bond_pct": 0.5879306910973909,
+    "cash_pct": 0.11949810794662417,
+    "commodity_pct": 0.0,
+    "other_pct": 0.005178251344353715,
+    "is_estimated": false
+  },
+  "003376": {
+    "equity_pct": 0.0,
+    "bond_pct": 0.9930447014692091,
+    "cash_pct": 0.006330103157236637,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0006251953735542358,
+    "is_estimated": false
+  },
+  "100032": {
+    "equity_pct": 0.9223050173869847,
+    "bond_pct": 9.935419771485347e-05,
+    "cash_pct": 0.07441629408842525,
+    "commodity_pct": 0.0,
+    "other_pct": 0.003179334326875311,
+    "is_estimated": false
+  },
+  "008269": {
+    "equity_pct": 0.5866361282613025,
+    "bond_pct": 0.019119697271459866,
+    "cash_pct": 0.39225253933479387,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0019916351324437364,
+    "is_estimated": false
+  },
+  "021550": {
+    "equity_pct": 0.9392564835815008,
+    "bond_pct": 0.0,
+    "cash_pct": 0.06074351641849916,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "000248": {
+    "equity_pct": 0.9411003880210925,
+    "bond_pct": 0.013431499353298182,
+    "cash_pct": 0.045468112625609396,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "000368": {
+    "equity_pct": 0.867170925191403,
+    "bond_pct": 0.014020846785351905,
+    "cash_pct": 0.03754266211604096,
+    "commodity_pct": 0.0,
+    "other_pct": 0.08126556590720414,
+    "is_estimated": false
+  },
+  "021142": {
+    "equity_pct": 0.9207521826729348,
+    "bond_pct": 0.0,
+    "cash_pct": 0.07924781732706514,
+    "commodity_pct": 0.0,
+    "other_pct": 0.0,
+    "is_estimated": false
+  },
+  "005812": {
+    "equity_pct": 0.9161734743378287,
+    "bond_pct": 0.0,
+    "cash_pct": 0.05666052197535655,
+    "commodity_pct": 0.0,
+    "other_pct": 0.027166003686814783,
+    "is_estimated": false
+  }
+}

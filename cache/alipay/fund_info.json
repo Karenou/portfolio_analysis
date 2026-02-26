@@ -1,0 +1,146 @@
+{
+  "000218": {
+    "name": "国泰黄金ETF联接A",
+    "sub_type": "commodity_fund"
+  },
+  "000628": {
+    "name": "大成高鑫股票A",
+    "sub_type": "equity_fund"
+  },
+  "006484": {
+    "name": "广发中债1-3年国开行债券指数A",
+    "sub_type": "bond_fund"
+  },
+  "011066": {
+    "name": "大成高鑫股票C",
+    "sub_type": "equity_fund"
+  },
+  "004253": {
+    "name": "国泰黄金ETF联接C",
+    "sub_type": "commodity_fund"
+  },
+  "019518": {
+    "name": "富国全球债券(QDII)C",
+    "sub_type": "bond_fund"
+  },
+  "012323": {
+    "name": "华宝中证医疗ETF联接C",
+    "sub_type": "etf"
+  },
+  "162412": {
+    "name": "华宝中证医疗ETF联接(LOF)A",
+    "sub_type": "etf"
+  },
+  "002708": {
+    "name": "大摩健康产业混合A",
+    "sub_type": "mixed_fund"
+  },
+  "519915": {
+    "name": "富国消费主题混合A",
+    "sub_type": "mixed_fund"
+  },
+  "000051": {
+    "name": "华夏沪深300ETF联接A",
+    "sub_type": "etf"
+  },
+  "011309": {
+    "name": "富国消费主题混合C",
+    "sub_type": "mixed_fund"
+  },
+  "270042": {
+    "name": "广发纳斯达克100ETF联接(QDII)A",
+    "sub_type": "etf"
+  },
+  "100050": {
+    "name": "富国全球债券(QDII)A",
+    "sub_type": "bond_fund"
+  },
+  "006327": {
+    "name": "易方达中概互联网ETF联接(QDII)A(人民币份额)",
+    "sub_type": "etf"
+  },
+  "001180": {
+    "name": "广发医药卫生ETF联接A",
+    "sub_type": "etf"
+  },
+  "164906": {
+    "name": "交银施罗德中证海外中国互联网指数(QDII-LOF)A",
+    "sub_type": "etf"
+  },
+  "000369": {
+    "name": "广发全球医疗保健指数(QDII)A",
+    "sub_type": "etf"
+  },
+  "001064": {
+    "name": "广发中证环保产业ETF联接A",
+    "sub_type": "etf"
+  },
+  "012348": {
+    "name": "天弘恒生科技ETF联接(QDII)A",
+    "sub_type": "etf"
+  },
+  "110027": {
+    "name": "易方达安心回报债券A",
+    "sub_type": "bond_fund"
+  },
+  "000071": {
+    "name": "华夏恒生ETF联接(QDII)A",
+    "sub_type": "etf"
+  },
+  "000968": {
+    "name": "广发中证养老产业A",
+    "sub_type": "etf"
+  },
+  "000727": {
+    "name": "融通健康产业灵活配置混合A/B",
+    "sub_type": "mixed_fund"
+  },
+  "100038": {
+    "name": "富国沪深300增强A",
+    "sub_type": "etf"
+  },
+  "002286": {
+    "name": "中银美元债债券(QDII)A",
+    "sub_type": "bond_fund"
+  },
+  "004419": {
+    "name": "汇添富精选美元债债券A(QDII)",
+    "sub_type": "bond_fund"
+  },
+  "340001": {
+    "name": "兴全可转债混合",
+    "sub_type": "bond_fund"
+  },
+  "003376": {
+    "name": "广发中债7-10年期国开行债券指数A",
+    "sub_type": "bond_fund"
+  },
+  "100032": {
+    "name": "富国中证红利指数增强A",
+    "sub_type": "etf"
+  },
+  "008269": {
+    "name": "大成睿享混合A",
+    "sub_type": "mixed_fund"
+  },
+  "021550": {
+    "name": "博时中证红利低波动100ETF联接A",
+    "sub_type": "etf"
+  },
+  "000248": {
+    "name": "汇添富中证主要消费ETF联接A",
+    "sub_type": "etf"
+  },
+  "000368": {
+    "name": "汇添富沪深300安中动态策略指数A",
+    "sub_type": "etf"
+  },
+  "021142": {
+    "name": "华夏港股通央企红利ETF联接A",
+    "sub_type": "etf"
+  },
+  "005812": {
+    "name": "鹏华产业精选灵活配置混合A",
+    "sub_type": "mixed_fund"
+  }
+}
