@@ -6,12 +6,12 @@
 
 ```bash
 # 安装依赖
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ## 数据文件
 
-将各 App 导出的持仓文件放在 `data/` 目录下，目前支持：
+1. 需要手动将各 App 导出的持仓文件放在 `data/` 目录下，并且把文件名字前缀改为对应app的英文。目前支持：
 
 | 文件 | 来源 | 格式 |
 |------|------|------|
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 ### Step 1：检查数据提取结果（inspect_data.py）
 
-在正式运行分析前，先用 `inspect_data.py` 检查各文件的表格结构是否被正确提取：
+在正式运行分析前，可以离线先用 `inspect_data.py` 检查各文件的表格结构是否被正确提取：
 
 ```bash
 # 扫描整个 data/ 目录，输出所有文件的表格结构
@@ -48,30 +48,15 @@ python3 inspect_data.py --data-dir data 2>&1 | tee output/inspect_result.log
 
 ### Step 2：运行主程序分析（main.py）
 
+程序执行步骤
+1. 删除cache文件夹下各个子文件夹的历史缓存文件
+2. 逐个解析data文件夹下的资产持仓数据，然后进行持仓分析
+3. 把分析结果以json格式保存到output文件夹内，输出文件名为`aggregated_summary_YYYYMMDD.json`，YYYYMMDD为程序执行当日日期。
+
 ```bash
 
-# ------------ 抓取支付宝基金穿透数据
-# 先把cache内支付宝的json文件删除，再执行下面命令行
-python3 -m test.get_alipay_penetration --date ${date} --file ${file_name}
-
-# ----------- 抓取富途的穿透数据
-python3 -m test.get_futu_penetration --date ${date} --file ${file_name}
-
-# ----------- 抓取华泰的穿透数据
-python3 -m test.get_huatai_penetration --date ${date} --file ${file_name}
-
-# ----------- 抓取且慢的穿透数据
-python3 -m test.get_qieman_penetration --date ${date} --file ${file_name}
-
-# ----------- 抓取雪球的穿透数据
-python3 -m test.get_snowball_penetration --date ${date} --file ${file_name}
-
-
-# 使用默认配置运行
 python3 main.py
 
-# 指定自定义配置文件
-python3 main.py --config config.yaml
 ```
 
 ## 项目结构
