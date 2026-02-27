@@ -163,7 +163,10 @@ def _penetrate_allocation(
             continue
 
         # API query via Xueqiu
-        is_etf_linked = "ETF联接" in rec.name
+        if "ETF" in rec.name or "联接" in rec.name or "指数" in rec.name or "FOF" in rec.name or "QDII" in rec.name:
+            is_etf_linked = 1 
+        else:
+            is_etf_linked = 0
         time.sleep(_API_DELAY)
         alloc = _query_fund_allocation_api(
             code, date=date, is_etf_linked=is_etf_linked)

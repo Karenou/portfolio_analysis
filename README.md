@@ -52,19 +52,19 @@ python3 inspect_data.py --data-dir data 2>&1 | tee output/inspect_result.log
 
 # ------------ 抓取支付宝基金穿透数据
 # 先把cache内支付宝的json文件删除，再执行下面命令行
-python3 -m test.test_alipay_penetration --date ${date} --file ${file_name}
+python3 -m test.get_alipay_penetration --date ${date} --file ${file_name}
 
 # ----------- 抓取富途的穿透数据
-python3 -m test.test_futu_penetration --file ${file_name}
+python3 -m test.get_futu_penetration --date ${date} --file ${file_name}
 
 # ----------- 抓取华泰的穿透数据
-python3 -m test.test_huatai_penetration --file ${file_name}
+python3 -m test.get_huatai_penetration --date ${date} --file ${file_name}
 
 # ----------- 抓取且慢的穿透数据
-python3 -m test.test_qieman_penetration --file ${file_name}
+python3 -m test.get_qieman_penetration --date ${date} --file ${file_name}
 
 # ----------- 抓取雪球的穿透数据
-python3 -m test.test_snowball_penetration --file ${file_name}
+python3 -m test.get_snowball_penetration --date ${date} --file ${file_name}
 
 
 # 使用默认配置运行
@@ -86,7 +86,6 @@ portfolio_analysis/
 ├── config.yaml          # 配置文件
 ├── models.py            # 数据模型定义
 ├── main.py              # 主程序入口
-├── inspect_data.py      # 数据文件结构检查工具（独立可执行）
 ├── test/                # 测试代码
 └── requirements.txt     # Python 依赖
 ```

@@ -19,6 +19,27 @@ from typing import Optional
 
 import pandas as pd
 
+
+parser = argparse.ArgumentParser(
+    description="Inspect PDF and Excel data files - extract and display table structures."
+)
+parser.add_argument(
+    "--data-dir",
+    default="data",
+    help="Path to the data directory (default: data/)",
+)
+parser.add_argument(
+    "--file",
+    default=None,
+    help="Path to a single file to inspect (overrides --data-dir)",
+)
+parser.add_argument(
+    "--max-rows",
+    type=int,
+    default=10,
+    help="Max rows to display per table (default: 10)",
+)
+
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
@@ -266,26 +287,7 @@ def scan_directory(data_dir: str, max_rows: int = 10) -> None:
     print(SEPARATOR)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Inspect PDF and Excel data files - extract and display table structures."
-    )
-    parser.add_argument(
-        "--data-dir",
-        default="data",
-        help="Path to the data directory (default: data/)",
-    )
-    parser.add_argument(
-        "--file",
-        default=None,
-        help="Path to a single file to inspect (overrides --data-dir)",
-    )
-    parser.add_argument(
-        "--max-rows",
-        type=int,
-        default=10,
-        help="Max rows to display per table (default: 10)",
-    )
+if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.file:
@@ -297,5 +299,4 @@ def main():
         scan_directory(args.data_dir, args.max_rows)
 
 
-if __name__ == "__main__":
-    main()
+
