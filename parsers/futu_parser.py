@@ -4,13 +4,13 @@ Futu exports a PDF daily statement. The full holdings are on the page
 containing "期末概覽-股票和股票期權" (stocks) and "期末概覽-基金" (funds).
 
 Stock line format (text-based):
-  01919(中遠海控) SEHK HKD 2,500 13.9400 - 34,850.00 13,940.00 10,455.00 0.3000
+  01919(中遠海控) SEHK HKD xx xx - xxx xx xx xx
 
 Fund line format (text-based):
-  HK0000369188(泰康開泰海外短期債券基金) HKD 14,632.707868 13.9240 2026/02/05 0.00 203,745.82
+  HK0000369188(泰康開泰海外短期債券基金) HKD xxx xx 2026/02/05 0.00 xx
 
 Special case: FREQ.CVR name spans two lines:
-  FREQ.CVR(Frequency Therapeutics Inc US USD 224 0.0000 - 0.00 ...
+  FREQ.CVR(Frequency Therapeutics Inc US USD xx - xx ...
   Contingent Value Right)
 """
 

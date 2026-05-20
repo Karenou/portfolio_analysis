@@ -37,6 +37,7 @@ ap = argparse.ArgumentParser(description="Test snowball fund penetration")
 ap.add_argument("--deep", action="store_true", help="Enable deep penetration mode")
 ap.add_argument("--date", type=str, required=True, help="Holdings date in YYYYMMDD format, e.g. 20251231")
 ap.add_argument("--file", type=str, required=True, help="file name")
+ap.add_argument("--fetch-nav", action="store_true", help="Fetch and store fund NAV to SQLite")
 
 
 if __name__ == "__main__":
@@ -117,6 +118,13 @@ if __name__ == "__main__":
     logger.info(
         f"Total penetrated details: {len(result['penetrated_details'])}"
     )
+
+    # Optional: Fetch and store fund NAV to SQLite
+    if args.fetch_nav:
+        logger.info("Starting fund NAV fetch for snowball...")
+        from analyzers.fund_nav_db import fetch_and_store_fund_nav
+        fetch_and_store_fund_nav("snowball")
+        logger.info("Fund NAV fetch complete.")
 
     # List cache files
     cache_dir = config["paths"]["cache_dir"]

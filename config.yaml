@@ -1,0 +1,101 @@
+# ==============================================================================
+# Portfolio Analysis Configuration
+# ==============================================================================
+
+# --- Platform Registry ---
+# Maps file name prefix to platform identifier
+platforms:
+  alipay:
+    prefix: "alipay_"
+    region: "CN"
+    currency: "CNY"
+  qieman:
+    prefix: "qieman_"
+    region: "CN"
+    currency: "CNY"
+  snowball:
+    prefix: "snowball_"
+    region: "CN"
+    currency: "CNY"
+  huatai:
+    prefix: "huatai_"
+    region: "CN"
+    currency: "CNY"
+  futu:
+    prefix: "futu_"
+    region: "HK"
+    currency: "HKD"
+
+# --- Exchange Rates (to CNY) ---
+exchange_rates:
+  HKD: 0.87    # 1 HKD ≈ 0.92 CNY
+  USD: 6.84    # 1 USD ≈ 7.25 CNY
+  CNY: 1.0
+
+# --- Default Fund Allocation (fallback when API query fails) ---
+default_fund_allocation:
+  equity_fund:
+    equity_pct: 0.90
+    bond_pct: 0.0
+    cash_pct: 0.10
+    commodity_pct: 0.0
+    other_pct: 0.0
+  bond_fund:
+    equity_pct: 0.0
+    bond_pct: 0.95
+    cash_pct: 0.05
+    commodity_pct: 0.0
+    other_pct: 0.0
+  hybrid_fund:
+    equity_pct: 0.60
+    bond_pct: 0.30
+    cash_pct: 0.10
+    commodity_pct: 0.0
+    other_pct: 0.0
+  money_fund:
+    equity_pct: 0.0
+    bond_pct: 0.0
+    cash_pct: 1.0
+    commodity_pct: 0.0
+    other_pct: 0.0
+  commodity_fund:
+    equity_pct: 0.0
+    bond_pct: 0.0
+    cash_pct: 0.0
+    commodity_pct: 1.0
+    other_pct: 0.0
+  index_fund:
+    equity_pct: 0.95
+    bond_pct: 0.0
+    cash_pct: 0.05
+    commodity_pct: 0.0
+    other_pct: 0.0
+  other:
+    equity_pct: 1.0
+    bond_pct: 0.0
+    cash_pct: 0.0
+    commodity_pct: 0.0
+    other_pct: 0.0
+
+# --- Volatility Classification Rules ---
+volatility_rules:
+  high:
+    - stock_cn
+    - stock_hk
+    - equity_fund
+    - index_fund
+  medium:
+    - hybrid_fund
+    - commodity_fund
+    - convertible_bond_fund
+  low:
+    - bond_fund
+    - money_fund
+    - bond
+    - cash
+
+# --- Paths ---
+paths:
+  data_dir: "data"
+  output_dir: "output"
+  cache_dir: "cache"
