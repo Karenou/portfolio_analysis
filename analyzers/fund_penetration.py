@@ -13,9 +13,15 @@ import re
 import time
 from datetime import datetime, timedelta
 from typing import Optional
+import akshare as ak
 
 from models import HoldingRecord, FundAllocation
 from analyzers.cache_utils import load_json, save_json, safe_pct
+from analyzers.fund_nav_db import (
+    get_stock_industry as db_get_stock_industry,
+    save_stock_industry as db_save_stock_industry,
+    batch_save_stock_industry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +63,6 @@ def _query_fund_allocation_api(
         is_etf_linked: If True, treat "其他" as equity.
     """
     try:
-        import akshare as ak
         query_date = date if len(date) == 8 else datetime.now().strftime("%Y%m%d")
         df = ak.fund_individual_detail_hold_xq(
             symbol=code, date=query_date)
@@ -210,7 +215,6 @@ def _guess_tracked_index(fund_name: str) -> Optional[str]:
 def _query_fund_holdings_api(code: str, date: str = "") -> Optional[list[dict]]:
     """Query fund top stock holdings via akshare."""
     try:
-        import akshare as ak
         year = date[:4] if len(date) >= 4 else str(datetime.now().year)
         fallback_year = str(int(year) - 1)
         df = ak.fund_portfolio_hold_em(symbol=code, date=year)
@@ -236,7 +240,6 @@ def _query_fund_holdings_api(code: str, date: str = "") -> Optional[list[dict]]:
 def _query_fund_bond_holdings_api(code: str, date: str = "") -> Optional[list[dict]]:
     """Query fund top bond holdings via akshare."""
     try:
-        import akshare as ak
         year = date[:4] if len(date) >= 4 else str(datetime.now().year)
         fallback_year = str(int(year) - 1)
         df = ak.fund_portfolio_bond_hold_em(symbol=code, date=year)
@@ -262,7 +265,6 @@ def _query_fund_bond_holdings_api(code: str, date: str = "") -> Optional[list[di
 def _query_index_constituents_api(idx_code: str) -> Optional[list[dict]]:
     """Query index constituents from akshare."""
     try:
-        import akshare as ak
         df = None
         try:
             df = ak.index_stock_cons_csindex(symbol=idx_code)
@@ -343,24 +345,39 @@ def _penetrate_holdings(
 # 5.3  Multi-dimension Data Collection
 # ===========================================================================
 
-def _query_stock_industry(code: str) -> Optional[dict]:
+def _query_fund_industry(fund_code: str, date: str) -> Optional[list[dict]]:
+    """查询基金的行业配置分布（fund_portfolio_industry_allocation_em）。
+
+    返回最新一期的行业列表，每项包含 industry_name 和 pct（占净值比例）。
+    注意：此 API 接受基金代码，不能传股票代码。
+    """
     try:
-        import akshare as ak
-        df = ak.stock_individual_info_em(symbol=code)
+        year = date[:4] if len(date) >= 4 else str(datetime.now().year)
+        df = ak.fund_portfolio_industry_allocation_em(symbol=fund_code, date=year)
         if df is None or df.empty:
             return None
-        info = {}
-        for _, r in df.iterrows():
-            item = str(r.get("item", ""))
-            val  = str(r.get("value", ""))
-            if "行业" in item:
-                info["industry_l1"] = val
-            if "板块" in item:
-                info["industry_l2"] = val
-        return info if "industry_l1" in info else None
+        # 取最新一期（截止时间最大）
+        latest_date = df["截止时间"].max()
+        df_latest = df[df["截止时间"] == latest_date]
+        rows = []
+        for _, r in df_latest.iterrows():
+            ind_name = str(r.get("行业类别", "")).strip()
+            pct = float(r.get("占净值比例", 0) or 0)
+            if ind_name and pct > 0:
+                rows.append({"industry_name": ind_name, "pct": pct})
+        return rows if rows else None
     except Exception as e:
-        logger.debug(f"stock_individual_info_em failed for {code}: {e}")
+        logger.debug(f"fund_portfolio_industry_allocation_em failed for {fund_code}: {e}")
         return None
+
+
+def _get_top_industry(industry_rows: list[dict]) -> tuple[str, str]:
+    """从基金行业分布列表中取占比最高的一个行业名，映射为 l1/l2。"""
+    if not industry_rows:
+        return "未知", "未知"
+    top = max(industry_rows, key=lambda x: x["pct"])
+    name = top["industry_name"]
+    return name, name
 
 
 def _classify_region(code: str, currency: str, raw_info: dict) -> str:
@@ -384,7 +401,6 @@ def _classify_region(code: str, currency: str, raw_info: dict) -> str:
 def _compute_volatility(code: str, market: str = "cn") -> Optional[float]:
     """Compute annualized volatility from 1-year daily returns."""
     try:
-        import akshare as ak
         end = datetime.now().strftime("%Y%m%d")
         start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
         if market == "hk":
@@ -417,51 +433,84 @@ def _default_risk_level(sub_type: str, config: dict) -> str:
 
 def _collect_dimensions(
     all_records: list[HoldingRecord], fund_holdings: dict,
-    config: dict, cache_dir: str,
+    config: dict, cache_dir: str, date: str
 ) -> tuple[dict, dict, dict]:
-    """Step 5.3: Collect industry, region, volatility."""
+    """Step 5.3: Collect industry, region, volatility.
+
+    行业数据采集策略（修正版）：
+    - 基金持仓：直接用基金代码调 fund_portfolio_industry_allocation_em，
+      获取该基金的行业分布（正确用途），存为 fund_industry_detail
+    - 直接持有的 A 股个股：标记为"个股-直接持有"，不再查单股行业
+      （单股行业查询需要 stock_individual_info_em，该接口不稳定）
+    - 海外股票：直接标记为"海外"
+    """
     ind_path = os.path.join(cache_dir, "stock_industry.json")
     reg_path = os.path.join(cache_dir, "security_region.json")
     vol_path = os.path.join(cache_dir, "volatility.json")
+    fund_ind_path = os.path.join(cache_dir, "fund_industry.json")
 
     industry  = load_json(ind_path)
     regions   = load_json(reg_path)
     vol_data  = load_json(vol_path)
+    # fund_industry 存放每只基金的完整行业分布列表
+    fund_industry: dict[str, list[dict]] = load_json(fund_ind_path)
 
-    # Region for every record
+    # 地区标注：所有记录
     for rec in all_records:
         if rec.code not in regions:
             regions[rec.code] = _classify_region(
                 rec.code, rec.currency, rec.raw_info)
 
-    # Collect unique stock codes
-    stock_codes: set[tuple[str, str]] = set()
+    # 直接持有的个股行业标注
     for rec in all_records:
-        if rec.asset_class == "equity":
-            stock_codes.add((rec.code, rec.sub_type))
+        if rec.asset_class == "equity" and rec.code not in industry:
+            if not re.match(r"^\d{6}$", rec.code):
+                # 海外股票
+                industry[rec.code] = {"industry_l1": "海外", "industry_l2": "海外"}
+            else:
+                # A股个股：标记 region，行业留空等待后续补充
+                industry[rec.code] = {"industry_l1": "个股", "industry_l2": "个股"}
+
+    # 基金行业分布：用基金代码直接查（正确用途）
+    fund_records = [r for r in all_records if r.asset_class == "fund"
+                    and r.sub_type not in ("money_fund", "commodity_fund")]
+    logger.info(f"Collecting fund industry for {len(fund_records)} funds...")
+    n_queried = 0
+    for rec in fund_records:
+        if rec.code in fund_industry:
+            continue
+        time.sleep(_API_DELAY)
+        rows = _query_fund_industry(rec.code, date)
+        if rows:
+            fund_industry[rec.code] = rows
+            # 取 top 行业写入 industry dict（供 penetrated_details 展示）
+            top_l1, top_l2 = _get_top_industry(rows)
+            industry[rec.code] = {"industry_l1": top_l1, "industry_l2": top_l2}
+            n_queried += 1
+            logger.info(f"Fund {rec.code} ({rec.name}): top industry={top_l1} "
+                        f"({len(rows)} sectors)")
+        else:
+            fund_industry[rec.code] = []
+            industry[rec.code] = {"industry_l1": "未知", "industry_l2": "未知"}
+    logger.info(f"Fund industry: queried {n_queried} new funds")
+
+    save_json(fund_industry, fund_ind_path)
+
+    # 同步 fund_holdings 里的底层股票行业（已知来源：fund_holdings，标记为"基金持股"）
     for _, holdings in fund_holdings.items():
         for h in holdings:
             sc = h.get("stock_code", "")
-            if sc:
-                stock_codes.add((sc, "stock_cn"))
-                if sc not in regions:
-                    regions[sc] = "CN"
+            if sc and sc not in industry:
+                if not re.match(r"^\d{6}$", sc):
+                    industry[sc] = {"industry_l1": "海外", "industry_l2": "海外"}
+                else:
+                    industry[sc] = {"industry_l1": "个股", "industry_l2": "个股"}
+            if sc and sc not in regions:
+                regions[sc] = "CN"
 
-    # Industry
-    logger.info(f"Collecting industry for {len(stock_codes)} stocks...")
-    n_queried = 0
-    for code, _ in stock_codes:
-        if code in industry:
-            continue
-        if not re.match(r"^\d{6}$", code):
-            industry[code] = {"industry_l1": "海外", "industry_l2": "海外"}
-            continue
-        time.sleep(_API_DELAY)
-        info = _query_stock_industry(code)
-        industry[code] = info or {"industry_l1": "未知", "industry_l2": "未知"}
-        if info:
-            n_queried += 1
-    logger.info(f"Industry: queried {n_queried} new stocks")
+    n_queried_stocks = sum(1 for v in industry.values()
+                           if v.get("industry_l1") not in ("未知", "海外", "个股"))
+    logger.info(f"Industry: {len(industry)} total, {n_queried_stocks} with known sector")
 
     # Volatility
     logger.info("Collecting volatility data...")
@@ -495,6 +544,10 @@ def _collect_dimensions(
     save_json(industry, ind_path)
     save_json(regions, reg_path)
     save_json(vol_data, vol_path)
+
+    # Batch persist industry data to SQLite
+    batch_save_stock_industry(industry)
+
     return industry, regions, vol_data
 
 
@@ -827,7 +880,7 @@ def penetrate_funds(
             funds, config, cache_dir, date=date)
         # 5.3 - Deep mode: collect industry / region / volatility
         industry, regions, vol = _collect_dimensions(
-            records, fund_h, config, cache_dir)
+            records, fund_h, config, cache_dir, date)
     else:
         # Shallow mode: skip 5.2/5.3, use empty placeholders
         fund_h, fund_bh, idx_c = {}, {}, {}

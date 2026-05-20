@@ -1,12 +1,13 @@
 """Multi-dimension Aggregation - Step 6.
 
-Reads cached penetration results from Step 5, performs four-dimension
+Reads cached penetration results from Step 5, performs five-dimension
 aggregation WITHOUT calling any akshare API:
 
   Dim 1: Asset class (equity / bond / commodity / cash / other)
   Dim 2: Region (CN / HK / US / OTHER)
-  Dim 3: Industry (SW L1 classification)
+  Dim 3: Industry (SW L1 classification) — reads from SQLite first, fallback to JSON
   Dim 4: Risk level (high / medium / low)
+  Dim 5: Quant metrics (return / volatility / drawdown / correlation)
 
 Outputs: cache/aggregation_result.json
 
@@ -21,6 +22,11 @@ from collections import defaultdict
 from typing import Any
 
 from analyzers.cache_utils import load_json, save_json
+from analyzers.fund_nav_db import (
+    get_stock_industry as db_get_stock_industry,
+    get_fund_industry_allocation as db_get_fund_industry,
+    compute_quant_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +89,15 @@ def aggregate_all(penetration_result: dict, config: dict) -> dict:
     dim2_table = _to_pct_table(dim2, total_mv)
 
     # --- Dimension 3: Industry (SW L1) - only equity portion ---
+    # Enrich industry_l1 from SQLite when missing or "未知"
     equity_details = [d for d in details
                       if d.get("true_asset_class") == "equity"]
+    for d in equity_details:
+        if d.get("industry_l1") in ("未知", "", None):
+            db_info = db_get_stock_industry(d.get("code", ""))
+            if db_info:
+                d["industry_l1"] = db_info.get("industry_l1", "未知")
+                d["industry_l2"] = db_info.get("industry_l2", "未知")
     equity_total = sum(d.get("market_value_cny", 0)
                        for d in equity_details)
     dim3_raw = _group_by(equity_details, "industry_l1")
@@ -101,6 +114,13 @@ def aggregate_all(penetration_result: dict, config: dict) -> dict:
     # --- Merge duplicate stocks across platforms ---
     stock_agg = _merge_same_stock(equity_details)
 
+    # --- Dimension 5: Quant metrics (return / volatility / drawdown / correlation) ---
+    logger.info("Computing quant metrics (Dim 5)...")
+    quant = compute_quant_metrics()
+    quant_path = os.path.join(cache_dir, "fund_quant_metrics.json")
+    save_json(quant, quant_path)
+    logger.info(f"Quant metrics saved to {quant_path}")
+
     result = {
         "total_market_value_cny": total_mv,
         "dim_asset_class": dim1_table,
@@ -110,6 +130,7 @@ def aggregate_all(penetration_result: dict, config: dict) -> dict:
         "dim_risk_level": dim4_table,
         "dim_original_type": dim_orig_table,
         "top_stock_holdings": stock_agg[:30],
+        "dim_quant_metrics": quant,
         "level1_summary": penetration_result.get("level1_summary", {}),
         "level2_summary": penetration_result.get("level2_summary", {}),
     }
@@ -122,6 +143,7 @@ def aggregate_all(penetration_result: dict, config: dict) -> dict:
     _log_dim("Region", dim2_table)
     _log_dim("Industry (Top 10)", dim3_table[:10])
     _log_dim("Risk Level", dim4_table)
+    _log_quant_summary(quant)
 
     logger.info(f"Aggregation saved to {out_path}")
     return result
@@ -163,6 +185,31 @@ def _log_dim(name: str, table: list[dict]):
     """Log a dimension summary."""
     parts = [f"{r['label']}={r['pct']:.1%}" for r in table]
     logger.info(f"[{name}] {' | '.join(parts)}")
+
+
+def _log_quant_summary(quant: dict):
+    """Log quant metrics summary."""
+    for asset_type, label in [("fund_metrics", "OTC Funds"),
+                              ("etf_metrics", "ETFs"),
+                              ("stock_metrics", "Stocks")]:
+        metrics = quant.get(asset_type, {})
+        if not metrics:
+            continue
+        n = len(metrics)
+        # Show top 3 by 1Y return
+        top = sorted(
+            ((k, v.get("1Y", {}).get("annualised_return"))
+             for k, v in metrics.items()
+             if v.get("1Y", {}).get("annualised_return") is not None),
+            key=lambda x: -(x[1] or 0),
+        )[:3]
+        parts = [f"{k}={r:.1%}" for k, r in top]
+        logger.info(f"[Quant-{label}] {n} assets, top 1Y return: {' | '.join(parts)}")
+
+    corr = quant.get("correlation_matrix", {})
+    if corr.get("symbols"):
+        logger.info(f"[Quant-Correlation] {len(corr['symbols'])}x{len(corr['symbols'])} "
+                    f"matrix ({corr.get('data_points', 0)} data points)")
 
 
 def aggregate_cross_platform(cache_dir: str) -> dict:
