@@ -21,6 +21,9 @@
 | 11 | `stock_zh_a_daily` | `analyzers/fund_nav_db.py` | A 股日线行情 |
 | 12 | `stock_hk_daily` | `analyzers/fund_nav_db.py` | 港股日线行情 |
 | 13 | `stock_us_daily` | `analyzers/fund_nav_db.py` | 美股日线行情 |
+| 14 | `stock_individual_basic_info_xq` | `script/test_industry_to_sqlite.py` | A股个股基本信息（雪球） |
+| 15 | `stock_individual_basic_info_us_xq` | `script/test_industry_to_sqlite.py` | 美股个股基本信息（雪球） |
+| 16 | `stock_hk_company_profile_em` | `script/test_industry_to_sqlite.py` | 港股个股公司概况（东方财富） |
 
 ---
 
@@ -345,6 +348,103 @@
 
 ---
 
+### 14. `ak.stock_individual_basic_info_xq`
+
+- **用途**: 查询 A 股个股基本信息（数据源：雪球），主要用于获取个股所属行业
+- **所在文件**: `script/test_industry_to_sqlite.py` (行 268)
+- **调用方式**:
+  ```python
+  df = ak.stock_individual_basic_info_xq(symbol="SH600519", token=xq_a_token)
+  ```
+- **参数**:
+  | 参数 | 类型 | 说明 | 示例 |
+  |------|------|------|------|
+  | symbol | str | 雪球格式代码（SH/SZ + 6位数字） | `"SH600519"`, `"SZ000001"` |
+  | token | str | 雪球 xq_a_token（从浏览器 Cookie 获取） | 登录雪球后获取 |
+  | timeout | float | 请求超时时间（秒），可选 | `None` |
+- **返回 DataFrame 字段**（item/value 两列格式）:
+  | item 值 | 说明 |
+  |---------|------|
+  | org_name_cn | 公司全称 |
+  | org_short_name_cn | 公司简称 |
+  | main_operation_business | 主营业务描述 |
+  | affiliate_industry | 所属行业，格式为 `{'ind_code': 'BK0088', 'ind_name': '白酒'}` |
+  | staff_num | 员工人数 |
+  | listed_date | 上市日期（时间戳） |
+  | actual_controller | 实际控制人 |
+- **项目中的使用逻辑**: 提取 `affiliate_industry` 字段中的 `ind_name` 作为个股行业分类，存入 SQLite `stock_industry` 表
+- **注意**:
+  - symbol 格式要求：6开头加 `SH` 前缀，0/3开头加 `SZ` 前缀
+  - 需要有效的雪球 token，通过命令行 `--token` 参数传入
+  - token 获取方式：登录雪球网页版 → 浏览器开发者工具 → Application → Cookies → `xq_a_token`
+
+---
+
+### 15. `ak.stock_individual_basic_info_us_xq`
+
+- **用途**: 查询美股个股基本信息（数据源：雪球），主要用于获取主营业务描述
+- **所在文件**: `script/test_industry_to_sqlite.py` (行 305)
+- **调用方式**:
+  ```python
+  df = ak.stock_individual_basic_info_us_xq(symbol="NVDA", token=xq_a_token)
+  ```
+- **参数**:
+  | 参数 | 类型 | 说明 | 示例 |
+  |------|------|------|------|
+  | symbol | str | 美股 ticker 代码 | `"NVDA"`, `"PDD"`, `"BRK.B"` |
+  | token | str | 雪球 xq_a_token（从浏览器 Cookie 获取） | 登录雪球后获取 |
+  | timeout | float | 请求超时时间（秒），可选 | `None` |
+- **返回 DataFrame 字段**（item/value 两列格式）:
+  | item 值 | 说明 |
+  |---------|------|
+  | org_name_cn | 公司中文全称 |
+  | org_short_name_en | 公司英文简称 |
+  | main_operation_business | 主营业务描述（中文） |
+  | operating_scope | 经营范围详细描述 |
+  | org_cn_introduction | 公司简介 |
+  | staff_num | 员工人数 |
+  | td_mkt | 上市交易所 |
+  | mainholder | 主要股东 |
+- **项目中的使用逻辑**: 提取 `main_operation_business` 字段作为美股个股行业/业务描述，存入 SQLite `stock_industry` 表
+- **注意**:
+  - symbol 直接使用美股 ticker（如 `NVDA`、`PDD`），无需加前缀
+  - 需要有效的雪球 token，与 A 股接口共用同一个 token
+  - 美股没有 `affiliate_industry` 字段，只能通过 `main_operation_business` 获取业务信息
+
+---
+
+### 16. `ak.stock_hk_company_profile_em`
+
+- **用途**: 查询港股个股公司概况（数据源：东方财富），主要用于获取个股所属行业
+- **所在文件**: `script/test_industry_to_sqlite.py` (行 286)
+- **调用方式**:
+  ```python
+  df = ak.stock_hk_company_profile_em(symbol="01919")
+  ```
+- **参数**:
+  | 参数 | 类型 | 说明 | 示例 |
+  |------|------|------|------|
+  | symbol | str | 港股代码（5位，含前导零） | `"01919"`, `"00700"`, `"02020"` |
+- **返回 DataFrame 字段**（列名即字段名，通常只有1行数据）:
+  | 列名 | 说明 |
+  |------|------|
+  | 公司名称 | 公司中文全称 |
+  | 英文名称 | 公司英文全称 |
+  | 注册地 | 公司注册地 |
+  | 所属行业 | 行业分类名称（如"工用运输"、"零售业"） |
+  | 董事长 | 董事长姓名 |
+  | 员工人数 | 员工总数 |
+  | 公司成立日期 | 成立日期 |
+  | 公司网址 | 官网地址 |
+  | 公司介绍 | 公司简介 |
+- **项目中的使用逻辑**: 提取 `所属行业` 列的值作为港股个股行业分类，存入 SQLite `stock_industry` 表
+- **注意**:
+  - symbol 必须是 5 位数字字符串（不足5位需前导补零），如腾讯为 `"00700"`
+  - 不需要 token，数据源为东方财富免费接口
+  - 代码中先通过 `stock_code.replace("HK", "").lstrip("0").zfill(5)` 统一转换格式
+
+---
+
 ## 使用注意事项
 
 1. **请求频率**: akshare 底层调用东方财富等网站接口，建议调用间隔 ≥ 0.5s，批量抓取时用 `time.sleep()` 避免被封 IP
@@ -352,7 +452,8 @@
 3. **fallback 机制**: 项目中对 `fund_portfolio_hold_em`、`fund_portfolio_bond_hold_em` 设置了年份 fallback（当前年无数据时尝试上一年）
 4. **异常处理**: 所有 API 调用均包裹在 try-except 中，失败时返回 None/空列表，不阻断流程
 5. **代码前缀**:
-   - A 股: 需加 "sh"/"sz" 前缀（`stock_zh_a_daily`）
+   - A 股: 需加 "sh"/"sz" 前缀（`stock_zh_a_daily`）；雪球接口需加 "SH"/"SZ" 前缀（`stock_individual_basic_info_xq`）
    - 港股: 5位代码含前导零（`stock_hk_daily`）
-   - 美股: 直接用 ticker（`stock_us_daily`）
+   - 美股: 直接用 ticker（`stock_us_daily`、`stock_individual_basic_info_us_xq`）
    - 基金: 均为6位纯数字代码
+6. **雪球 token**: `stock_individual_basic_info_xq` 和 `stock_individual_basic_info_us_xq` 需要雪球登录 token，通过命令行 `--token` 参数传入，不要硬编码到代码中。token 有时效性，过期需重新从浏览器获取

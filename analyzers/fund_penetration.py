@@ -19,7 +19,9 @@ from models import HoldingRecord, FundAllocation
 from analyzers.cache_utils import load_json, save_json, safe_pct
 from analyzers.fund_nav_db import (
     batch_save_stock_industry,
+    get_stock_industry,
     save_fund_industry_allocation,
+    save_stock_industry,
 )
 
 logger = logging.getLogger(__name__)
@@ -424,6 +426,86 @@ def _penetrate_holdings(
 # 5.3  Multi-dimension Data Collection
 # ===========================================================================
 
+def _query_stock_industry(stock_code: str, region: str) -> Optional[dict]:
+    """通过 akshare API 查询个股所属行业，并保存到 SQLite。
+
+    根据 region 调用不同接口：
+      - CN (A股): stock_individual_info_em → 取"行业"
+      - HK (港股): stock_hk_company_profile_em → 取"所属行业"
+      - US (美股): stock_individual_basic_info_us_xq → 取"main_operation_business"
+
+    Returns:
+        {"industry_l1": ..., "industry_l2": ...} 或 None（查询失败时）
+    """
+    industry_name = None
+    data_source = ""
+
+    try:
+        if region == "CN":
+            # A股：stock_individual_info_em
+            df = ak.stock_individual_info_em(symbol=stock_code)
+            if df is not None and not df.empty:
+                # 返回格式为 item/value 两列，取 item="行业" 的 value
+                row = df[df["item"] == "行业"]
+                if not row.empty:
+                    industry_name = str(row.iloc[0]["value"]).strip()
+            data_source = "stock_individual_info_em"
+
+        elif region == "HK":
+            # 港股：stock_hk_company_profile_em
+            # 港股代码可能是 "00700" 或 "HK00700" 格式，统一处理
+            hk_code = stock_code.replace("HK", "").lstrip("0") or "0"
+            hk_code = hk_code.zfill(5)
+            df = ak.stock_hk_company_profile_em(symbol=hk_code)
+            if df is not None and not df.empty:
+                # 返回格式为列名直接是字段名，如 "所属行业" 是一个 column
+                if "所属行业" in df.columns:
+                    industry_name = str(df["所属行业"].iloc[0]).strip()
+                # 兼容旧版 item/value 格式
+                elif "item" in df.columns:
+                    row = df[df["item"] == "所属行业"]
+                    if not row.empty:
+                        industry_name = str(row.iloc[0]["value"]).strip()
+            data_source = "stock_hk_company_profile_em"
+
+        elif region == "US":
+            # 美股：stock_individual_basic_info_us_xq
+            df = ak.stock_individual_basic_info_us_xq(symbol=stock_code)
+            if df is not None and not df.empty:
+                # 返回格式为 item/value 两列，取 "main_operation_business"
+                if "item" in df.columns:
+                    row = df[df["item"] == "main_operation_business"]
+                    if not row.empty:
+                        industry_name = str(row.iloc[0]["value"]).strip()
+                else:
+                    # 尝试直接取字段
+                    if "main_operation_business" in df.columns:
+                        val = df["main_operation_business"].iloc[0]
+                        if val:
+                            industry_name = str(val).strip()
+            data_source = "stock_individual_basic_info_us_xq"
+
+    except Exception as e:
+        logger.debug(f"_query_stock_industry failed for {stock_code} ({region}): {e}")
+        return None
+
+    if not industry_name or industry_name in ("nan", "None", ""):
+        return None
+
+    result = {"industry_l1": industry_name, "industry_l2": industry_name}
+
+    # 保存到 SQLite
+    save_stock_industry(
+        stock_code=stock_code,
+        stock_name="",
+        industry_l1=industry_name,
+        industry_l2=industry_name,
+        data_source=data_source,
+    )
+    logger.info(f"Stock {stock_code} ({region}): industry={industry_name}")
+    return result
+
+
 def _query_fund_industry(fund_code: str, date: str) -> Optional[list[dict]]:
     """查询基金的行业配置分布（fund_portfolio_industry_allocation_em）。
 
@@ -483,11 +565,14 @@ def _collect_dimensions(
 ) -> tuple[dict, dict]:
     """Step 5.3: Collect industry, region.
 
-    行业数据采集策略（修正版）：
+    行业数据采集策略：
     - 基金持仓：直接用基金代码调 fund_portfolio_industry_allocation_em，
       获取该基金的行业分布（正确用途），写入 SQLite fund_industry_allocation 表
-    - 直接持有的 A 股个股：标记为"个股-直接持有"
-    - 海外股票：直接标记为"海外"
+    - 直接持有的个股：通过 akshare API 查询真实行业分类
+      - A股: stock_individual_info_em → "行业"
+      - 港股: stock_hk_company_profile_em → "所属行业"
+      - 美股: stock_individual_basic_info_us_xq → "main_operation_business"
+    - 查询结果保存到 SQLite stock_industry 表，下次优先从缓存读取
     """
     reg_path = os.path.join(cache_dir, "security_region.json")
 
@@ -500,15 +585,35 @@ def _collect_dimensions(
             regions[rec.code] = _classify_region(
                 rec.code, rec.currency, rec.raw_info)
 
-    # 直接持有的个股行业标注
-    for rec in all_records:
-        if rec.asset_class == "equity" and rec.code not in industry:
-            if not re.match(r"^\d{6}$", rec.code):
-                # 海外股票
-                industry[rec.code] = {"industry_l1": "海外", "industry_l2": "海外"}
-            else:
-                # A股个股：标记 region，行业留空等待后续补充
+    # 直接持有的个股行业标注（通过 API 查询真实行业）
+    equity_records = [r for r in all_records
+                      if r.asset_class == "equity" and r.code not in industry]
+    logger.info(f"Collecting stock industry for {len(equity_records)} stocks...")
+    n_stock_queried = 0
+    for rec in equity_records:
+        if rec.code in industry:
+            continue
+        region = regions.get(rec.code, "CN")
+
+        # 优先从 SQLite 缓存读取
+        cached = get_stock_industry(rec.code)
+        if cached and cached.get("industry_l1") not in ("未知", "个股", "海外"):
+            industry[rec.code] = cached
+            continue
+
+        # 调用 API 查询
+        time.sleep(_API_DELAY)
+        result = _query_stock_industry(rec.code, region)
+        if result:
+            industry[rec.code] = result
+            n_stock_queried += 1
+        else:
+            # API 查询失败，按 region 给默认标签
+            if region == "CN":
                 industry[rec.code] = {"industry_l1": "个股", "industry_l2": "个股"}
+            else:
+                industry[rec.code] = {"industry_l1": "海外", "industry_l2": "海外"}
+    logger.info(f"Stock industry: queried {n_stock_queried} new stocks via API")
 
     # 基金行业分布：用基金代码直接查，写入 SQLite
     fund_records = [r for r in all_records if r.asset_class == "fund"
@@ -540,17 +645,41 @@ def _collect_dimensions(
             industry[rec.code] = {"industry_l1": "未知", "industry_l2": "未知"}
     logger.info(f"Fund industry: queried {n_queried} new funds")
 
-    # 同步 fund_holdings 里的底层股票行业（已知来源：fund_holdings，标记为"基金持股"）
+    # 同步 fund_holdings 里的底层股票行业（基金持仓的底层股票也查询真实行业）
+    holding_stocks = []
     for _, holdings in fund_holdings.items():
         for h in holdings:
             sc = h.get("stock_code", "")
             if sc and sc not in industry:
-                if not re.match(r"^\d{6}$", sc):
-                    industry[sc] = {"industry_l1": "海外", "industry_l2": "海外"}
-                else:
-                    industry[sc] = {"industry_l1": "个股", "industry_l2": "个股"}
+                holding_stocks.append(sc)
             if sc and sc not in regions:
                 regions[sc] = "CN"
+
+    logger.info(f"Collecting industry for {len(holding_stocks)} fund-holding stocks...")
+    n_holding_queried = 0
+    for sc in holding_stocks:
+        if sc in industry:
+            continue
+        region = regions.get(sc, "CN")
+
+        # 优先从 SQLite 缓存读取
+        cached = get_stock_industry(sc)
+        if cached and cached.get("industry_l1") not in ("未知", "个股", "海外"):
+            industry[sc] = cached
+            continue
+
+        # 调用 API 查询
+        time.sleep(_API_DELAY)
+        result = _query_stock_industry(sc, region)
+        if result:
+            industry[sc] = result
+            n_holding_queried += 1
+        else:
+            if region == "CN":
+                industry[sc] = {"industry_l1": "个股", "industry_l2": "个股"}
+            else:
+                industry[sc] = {"industry_l1": "海外", "industry_l2": "海外"}
+    logger.info(f"Fund-holding stock industry: queried {n_holding_queried} new stocks")
 
     n_queried_stocks = sum(1 for v in industry.values()
                            if v.get("industry_l1") not in ("未知", "海外", "个股"))
