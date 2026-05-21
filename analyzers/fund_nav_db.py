@@ -254,7 +254,7 @@ def fetch_and_store_fund_nav(platform: str, db_path: str = _DB_PATH):
     success = 0
     skipped = 0
 
-    logger.info(f"[{platform}] Starting NAV fetch for {total} funds...")
+    logger.info(f"---------------------[{platform}] Starting NAV fetch for {total} funds... ---------------------")
 
     for code, info in fund_map.items():
         name = info.get("name", "")
@@ -294,7 +294,7 @@ def fetch_and_store_fund_nav(platform: str, db_path: str = _DB_PATH):
     conn.close()
     logger.info(f"[{platform}] NAV fetch done: {success} fetched, "
                 f"{skipped} skipped (up-to-date), "
-                f"{total - success - skipped} failed")
+                f"{total - success - skipped} failed \n\n")
 
 
 # ──────────────────────────────────────────────

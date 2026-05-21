@@ -27,6 +27,7 @@ from analyzers.fund_nav_db import (
     get_fund_industry_allocation as db_get_fund_industry,
     compute_quant_metrics,
 )
+from analyzers.indicators import compute_all_indicators
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,11 @@ def aggregate_all(penetration_result: dict, config: dict) -> dict:
     quant_path = os.path.join(cache_dir, "fund_quant_metrics.json")
     save_json(quant, quant_path)
     logger.info(f"Quant metrics saved to {quant_path}")
+
+    # --- 新版指标计算（indicators.py）---
+    logger.info("Computing enhanced indicators...")
+    indicator_results = compute_all_indicators(config)
+    logger.info("Enhanced indicators computed.")
 
     result = {
         "total_market_value_cny": total_mv,

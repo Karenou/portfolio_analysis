@@ -238,27 +238,98 @@ python3 inspect_data.py --data-dir data 2>&1 | tee output/inspect_result.log
 - 跨页表格数据是否完整
 - Excel 中股票/基金区的行范围是否准确
 
-### 3. 运行主程序
+### 3. 运行主程序（一键执行完整流水线）
 
 ```bash
-python3 main.py
+# 对每个基金查询资产配置、行业分布、汇总输出
+python3 main.py --deep=False
+
+# 对每个基金查询资产配置、持股明细、行业分布、汇总输出
+python3 main.py --deep=True
 ```
 
-程序会自动执行完整流水线（Step 0 → Step 6），最终在 `output/` 目录下生成汇总报告。
+程序会自动执行完整流水线（Step 0 → Step 8），最终在 `output/` 目录下生成汇总报告和指标文件。
 
-### 4. 单平台独立测试
+### 4. 完整执行顺序
 
-也可以单独运行某个平台的穿透分析：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  完整执行顺序 (main.py 一键编排)                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Step 0: 清除 JSON 缓存                                         │
+│  ┌───────────────────────────────────────────────────────┐     │
+│  │  删除 cache/{platform}/*.json                          │     │
+│  │  保留 cache/fund_nav.db (SQLite 行情数据库不清除)        │     │
+│  └───────────────────────────────────────────────────────┘     │
+│         |                                                       │
+│         v                                                       │
+│  Step 1-5: 逐平台解析 + 分类 + 穿透                              │
+│  ┌───────────────────────────────────────────────────────┐     │
+│  │  对每个平台执行：                                        │     │
+│  │    Parse(解析PDF/Excel)                                 │     │
+│  │    -> Classify(资产分类)                                 │     │
+│  │    -> Convert(币种换算)                                  │     │
+│  │    -> Penetrate(基金穿透，拆解底层资产)                    │     │
+│  │                                                         │     │
+│  │  平台: alipay / futu / huatai / qieman / snowball       │     │
+│  └───────────────────────────────────────────────────────┘     │
+│         |                                                       │
+│         v                                                       │
+│  Step 6: 跨平台聚合                                              │
+│  ┌───────────────────────────────────────────────────────┐     │
+│  │  合并所有平台穿透结果                                     │     │
+│  │  输出: output/aggregated_summary_YYYYMMDD.json          │     │
+│  └───────────────────────────────────────────────────────┘     │
+│         |                                                       │
+│         v                                                       │
+│  Step 7: 抓取历史行情数据                                         │
+│  ┌───────────────────────────────────────────────────────┐     │
+│  │  全量抓取各类资产的历史价格：                               │     │
+│  │    场外基金 NAV (alipay/qieman/snowball)                 │     │
+│  │    场内 ETF 行情 (huatai)                                │     │
+│  │    A股/港股/美股行情 (huatai/futu)                        │     │
+│  │  数据写入: cache/fund_nav.db                             │     │
+│  └───────────────────────────────────────────────────────┘     │
+│         |                                                       │
+│         v                                                       │
+│  Step 8: 计算量化指标                                             │
+│  ┌───────────────────────────────────────────────────────┐     │
+│  │  基于历史行情计算：                                       │     │
+│  │    单资产: 收益率/波动率/最大回撤/夏普比率                  │     │
+│  │    Portfolio: 整体收益/波动/相关性矩阵                     │     │
+│  │  时间窗口: 1M / 3M / 6M / 1Y / 3Y / 5Y                 │     │
+│  │  输出: output/indicators_YYYYMMDD.json                  │     │
+│  └───────────────────────────────────────────────────────┘     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5. 分步手动执行
+
+也可以单独运行各个步骤：
+
+| 步骤 | 对应脚本 | 运行命令 |
+|------|---------|---------|
+| 解析+穿透(单平台) | `script/get_xxx_penetration.py` | `python3 -m script.get_alipay_penetration --file alipay_20260225.pdf --date 20260225` |
+| 获取历史价格 | `script/fetch_nav_data.py` | `python3 -m script.fetch_nav_data --all` |
+| 计算指标 | `script/test_indicators.py` | `python3 -m script.test_indicators` |
 
 ```bash
 # 支付宝（基金类，支持 deep 穿透）
-python3 -m test.get_alipay_penetration --file alipay_20260225.pdf --date 20260225
+python3 -m script.get_alipay_penetration --file alipay_20260225.pdf --date 20260225
 
 # 华泰（券商类）
-python3 -m test.get_huatai_penetration --file huatai_20250213.xlsx --date 20250213
+python3 -m script.get_huatai_penetration --file huatai_20250213.xlsx --date 20250213
 
 # 富途（券商类）
-python3 -m test.get_futu_penetration --file futu_20260225.pdf --date 20260225
+python3 -m script.get_futu_penetration --file futu_20260225.pdf --date 20260225
+
+# 抓取全量历史行情
+python3 -m script.fetch_nav_data --all
+
+# 计算量化指标
+python3 -m script.test_indicators
 ```
 
 ## 项目结构
@@ -286,7 +357,7 @@ portfolio_analysis/
 │   ├── aggregator.py        #   跨平台聚合器
 │   └── cache_utils.py       #   JSON 缓存工具函数
 │
-├── test/                    # 各平台独立测试脚本
+├── script/                    # 各平台独立脚本
 │   ├── get_alipay_penetration.py
 │   ├── get_qieman_penetration.py
 │   ├── get_snowball_penetration.py

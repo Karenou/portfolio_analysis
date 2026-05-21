@@ -82,7 +82,7 @@ def run_penetration_test(platform: str, data_file: str, date_str: str, deep: boo
     Returns:
         True if successful, False otherwise.
     """
-    module_name = f"test.get_{platform}_penetration"
+    module_name = f"script.get_{platform}_penetration"
     cmd = [sys.executable, "-m", module_name, "--file", data_file, "--date", date_str]
     
     if deep:
@@ -122,15 +122,119 @@ def run_aggregator(cache_dir: str) -> bool:
         return False
 
 
+def run_fetch_nav_data() -> bool:
+    """抓取所有平台的历史行情数据，写入 SQLite。
+    
+    Returns:
+        True if successful, False otherwise.
+    """
+    from analyzers.fund_nav_db import (
+        fetch_and_store_fund_nav,
+        fetch_and_store_etf_hist,
+        fetch_and_store_stock_hist,
+        fetch_and_store_stock_hk_hist,
+        fetch_and_store_stock_us_hist,
+    )
+    
+    logger.info("Fetching historical price data...")
+    
+    # 场外基金 NAV
+    fund_platforms = ["alipay", "qieman", "snowball"]
+    for platform in fund_platforms:
+        try:
+            logger.info(f"  Fetching {platform} fund NAV...")
+            fetch_and_store_fund_nav(platform)
+        except Exception as e:
+            logger.error(f"  {platform} fund NAV fetch failed: {e}")
+    
+    # ETF 行情
+    try:
+        logger.info("  Fetching ETF historical data...")
+        fetch_and_store_etf_hist()
+    except Exception as e:
+        logger.error(f"  ETF fetch failed: {e}")
+    
+    # A股行情
+    try:
+        logger.info("  Fetching A-share historical data...")
+        fetch_and_store_stock_hist()
+    except Exception as e:
+        logger.error(f"  A-share fetch failed: {e}")
+    
+    # 港股行情
+    try:
+        logger.info("  Fetching HK stock historical data...")
+        fetch_and_store_stock_hk_hist()
+    except Exception as e:
+        logger.error(f"  HK stock fetch failed: {e}")
+    
+    # 美股行情
+    try:
+        logger.info("  Fetching US stock historical data...")
+        fetch_and_store_stock_us_hist()
+    except Exception as e:
+        logger.error(f"  US stock fetch failed: {e}")
+    
+    logger.info("Historical price data fetch complete.")
+    return True
+
+
+def run_indicators(config: dict, output_dir: str, date_str: str) -> bool:
+    """计算量化指标（收益率/波动率/回撤/夏普/相关性）。
+    
+    Args:
+        config: 配置字典。
+        output_dir: 输出目录。
+        date_str: 日期字符串 YYYYMMDD。
+    
+    Returns:
+        True if successful, False otherwise.
+    """
+    import json
+    from analyzers.indicators import compute_all_indicators
+    
+    logger.info("Computing quantitative indicators...")
+    
+    try:
+        result = compute_all_indicators(config, windows=["1M", "3M", "6M", "1Y", "3Y", "5Y"])
+        
+        if result:
+            # 保存指标结果到 output 目录
+            output_path = os.path.join(output_dir, f"indicators_{date_str}.json")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"Indicators saved to: {output_path}")
+            logger.info(f"  Asset count: {result.get('asset_count', 'N/A')}")
+            logger.info(f"  Single asset metrics: {len(result.get('single_asset_metrics', []))}")
+            logger.info(f"  Portfolio windows: {list(result.get('portfolio_metrics', {}).keys())}")
+            return True
+        else:
+            logger.warning("Indicator computation returned empty result.")
+            return False
+    except Exception as e:
+        logger.error(f"Indicator computation failed: {e}")
+        return False
+
+
 if __name__ == "__main__":
     """Main pipeline entry point."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Portfolio Analysis Pipeline")
+    parser.add_argument("--deep", action="store_true", default=False,
+                        help="启用深度穿透模式（获取持股明细）")
+    args = parser.parse_args()
+    
     config = load_config()
     cache_dir = config["paths"]["cache_dir"]
     data_dir = config["paths"]["data_dir"]
+    deep_mode = args.deep or config.get("deep_penetration", False)
     
     # Get current date in YYYYMMDD format
     date_str = datetime.now().strftime("%Y%m%d")
-    logger.info(f"Pipeline started. Date: {date_str}")
+    logger.info(f"Pipeline started. Date: {date_str}, deep={deep_mode}")
     
     # Step 0: Clear cache files (keep subdirectories)
     logger.info("=== Step 0: Clearing cache files ===")
@@ -153,7 +257,7 @@ if __name__ == "__main__":
             data_file = find_data_file(data_dir, prefix)
             logger.info(f"\n--- Processing [{platform}] with file: {data_file} ---")
             
-            if run_penetration_test(platform, data_file, date_str, deep=False):
+            if run_penetration_test(platform, data_file, date_str, deep=deep_mode):
                 success_count += 1
             else:
                 logger.warning(f"Skipping {platform} due to error")
@@ -169,7 +273,16 @@ if __name__ == "__main__":
     logger.info("\n=== Step 6: Cross-platform aggregation ===")
     run_aggregator(cache_dir)
     
-    # Done
+    # Step 7: Fetch historical price data
+    logger.info("\n=== Step 7: Fetching historical price data ===")
+    run_fetch_nav_data()
+    
+    # Step 8: Compute quantitative indicators
+    logger.info("\n=== Step 8: Computing quantitative indicators ===")
     output_dir = config["paths"]["output_dir"]
+    run_indicators(config, output_dir, date_str)
+    
+    # Done
     logger.info(f"\n✅ Pipeline complete! Output dir: {output_dir}/")
     logger.info(f"   Summary file: output/aggregated_summary_{date_str}.json")
+    logger.info(f"   Indicators file: output/indicators_{date_str}.json")

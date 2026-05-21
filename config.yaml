@@ -94,6 +94,9 @@ volatility_rules:
     - bond
     - cash
 
+# --- Risk Free Rate (annualized, for Sharpe ratio) ---
+risk_free_rate: 0.018
+
 # --- Paths ---
 paths:
   data_dir: "data"

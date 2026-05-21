@@ -3,7 +3,7 @@
 Sub-steps:
   5.1 - Fund asset allocation (equity/bond/cash/commodity split)
   5.2 - Fund holding detail (top-N stocks, index constituents)
-  5.3 - Multi-dimension data collection (industry, region, volatility)
+  5.3 - Multi-dimension data collection (industry, region)
   5.4 - Penetrated result summary with all dimension labels -> cache
 """
 
@@ -11,16 +11,15 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 import akshare as ak
 
 from models import HoldingRecord, FundAllocation
 from analyzers.cache_utils import load_json, save_json, safe_pct
 from analyzers.fund_nav_db import (
-    get_stock_industry as db_get_stock_industry,
-    save_stock_industry as db_save_stock_industry,
     batch_save_stock_industry,
+    save_fund_industry_allocation,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,19 +47,90 @@ def _get_latest_season(df, season_col: str = "季度"):
     return df[df[season_col] == seasons[-1]]
 
 
+def _should_reclassify_other_as_equity(
+    sub_type: str, name: str, raw: dict[str, float],
+) -> bool:
+    """判断是否应将"其他"重分类为"股票"。
+
+    适用场景：ETF联接基金、指数基金、QDII股票型FOF 等通过持有ETF份额间接持有
+    股票的基金，API 返回的"其他"实际上代表底层 ETF/基金份额的股票仓位。
+
+    判断逻辑（前提：其他>50% 且 股票<=50%）：
+    1. sub_type 为 etf/index_fund → 重分类为股票
+       （含国内ETF联接、QDII股票型ETF联接、QDII-FOF股票型等）
+    2. 名称含 "ETF联接" / "联接" / "指数" → 重分类为股票
+    3. 股票型基金(equity_fund)且"其他" > 80% → 重分类为股票
+
+    不触发重分类的情况（由 _should_reclassify_other_as_bond 处理）：
+    - 债券型 QDII（sub_type=bond_fund）的"其他"由债券重分类逻辑处理
+    - 混合型基金（sub_type=mixed_fund）的"其他"保持原样不重分类
+    """
+    other_pct = raw.get("其他", 0.0)
+    eq_pct = raw.get("股票", 0.0)
+
+    # 如果"其他"很小，没必要重分类
+    if other_pct <= 50:
+        return False
+
+    # 如果本身股票已经占大头，不需要重分类
+    if eq_pct > 50:
+        return False
+
+    # 规则1: ETF/指数类基金 - "其他"就是底层ETF份额 = 股票
+    # 含：国内ETF联接、QDII股票ETF联接、QDII-FOF(标普500/纳斯达克/恒生等)
+    if sub_type in ("etf", "index_fund"):
+        return True
+
+    # 规则2: 名称关键词判断 - ETF联接、联接、指数
+    etf_keywords = ("ETF联接", "联接", "指数")
+    if any(kw in name for kw in etf_keywords):
+        return True
+
+    # 规则3: 股票型基金且"其他"异常高 - 可能是通过ETF方式配置
+    if sub_type == "equity_fund" and other_pct > 80:
+        return True
+
+    return False
+
+
+def _should_reclassify_other_as_bond(
+    sub_type: str, name: str, raw: dict[str, float],
+) -> bool:
+    """判断是否应将"其他"重分类为"债券"。
+
+    适用场景：债券型基金通过持有资管计划、ABS等间接持有债券类资产。
+    """
+    other_pct = raw.get("其他", 0.0)
+    bond_pct = raw.get("债券", 0.0)
+
+    if other_pct <= 50:
+        return False
+
+    # 债券型基金，"其他"很可能是 ABS/资管计划等固收资产
+    if sub_type == "bond_fund":
+        return True
+
+    # 名称含债券关键词
+    bond_keywords = ("债", "信用", "利率", "纯债", "短融")
+    if any(kw in name for kw in bond_keywords):
+        return True
+
+    return False
+
+
 def _query_fund_allocation_api(
-    code: str, date: str = "", *, is_etf_linked: bool = False,
+    code: str, date: str = "", *, sub_type: str = "", name: str = "",
 ) -> Optional[dict]:
     """Query fund asset allocation via Xueqiu (fund_individual_detail_hold_xq).
 
     Returns a normalised dict with equity/bond/cash/commodity/other ratios
-    that sum to 1.0.  For ETF-linked funds the "其他" category (which
-    represents the held ETF shares) is re-classified as equity.
+    that sum to 1.0. 自动根据基金类型和名称判断是否需要将"其他"重新归类。
 
     Args:
         code: Fund code.
         date: Date string in YYYYMMDD format.
-        is_etf_linked: If True, treat "其他" as equity.
+        sub_type: Fund sub type (etf/index_fund/equity_fund/bond_fund...).
+        name: Fund name for keyword-based reclassification.
     """
     try:
         query_date = date if len(date) == 8 else datetime.now().strftime("%Y%m%d")
@@ -81,10 +151,16 @@ def _query_fund_allocation_api(
         # API does not return a commodity row; keep 0
         commodity = 0.0
 
-        # ETF-linked: "其他" is actually the ETF position → equity
-        if is_etf_linked:
+        # 智能重分类"其他"
+        reclassified = ""
+        if _should_reclassify_other_as_equity(sub_type, name, raw):
             eq += other
             other = 0.0
+            reclassified = "equity"
+        elif _should_reclassify_other_as_bond(sub_type, name, raw):
+            bd += other
+            other = 0.0
+            reclassified = "bond"
 
         # Normalise so that ratios sum to 1.0 (bond funds may exceed 100% due to leverage)
         total = eq + bd + cash + commodity + other
@@ -101,6 +177,8 @@ def _query_fund_allocation_api(
             "equity_pct": eq_r, "bond_pct": bd_r,
             "cash_pct": cash_r, "commodity_pct": commodity_r,
             "other_pct": other_r,
+            "_reclassified": reclassified,  # 标记重分类来源（debug用）
+            "_raw": raw,  # 保留原始数据（debug用）
         }
     except Exception as e:
         logger.debug(f"fund_individual_detail_hold_xq failed for {code}: {e}")
@@ -167,19 +245,20 @@ def _penetrate_allocation(
                 is_estimated=d.get("is_estimated", False))
             continue
 
-        # API query via Xueqiu
-        if "ETF" in rec.name or "联接" in rec.name or "指数" in rec.name or "FOF" in rec.name or "QDII" in rec.name:
-            is_etf_linked = 1 
-        else:
-            is_etf_linked = 0
+        # API query via Xueqiu（智能重分类"其他"为实际资产类型）
         time.sleep(_API_DELAY)
         alloc = _query_fund_allocation_api(
-            code, date=date, is_etf_linked=is_etf_linked)
+            code, date=date, sub_type=rec.sub_type, name=rec.name)
         if alloc:
             estimated = False
+            reclassified = alloc.pop("_reclassified", "")
+            alloc.pop("_raw", None)  # 移除debug字段，不写入缓存
+            reclassify_msg = ""
+            if reclassified:
+                reclassify_msg = f" (其他→{reclassified})"
             logger.info(f"Fund {code} ({rec.name}): XQ API eq={alloc['equity_pct']:.1%} "
                         f"bond={alloc['bond_pct']:.1%} cash={alloc['cash_pct']:.1%}"
-                        f"{' (ETF-linked, 其他→equity)' if is_etf_linked else ''}")
+                        f"{reclassify_msg}")
         else:
             alloc = _default_allocation(rec.sub_type, config)
             estimated = True
@@ -398,62 +477,22 @@ def _classify_region(code: str, currency: str, raw_info: dict) -> str:
     return "CN"
 
 
-def _compute_volatility(code: str, market: str = "cn") -> Optional[float]:
-    """Compute annualized volatility from 1-year daily returns."""
-    try:
-        end = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
-        if market == "hk":
-            df = ak.stock_hk_hist(symbol=code, period="daily",
-                                  start_date=start, end_date=end,
-                                  adjust="qfq")
-        else:
-            df = ak.stock_zh_a_hist(symbol=code, period="daily",
-                                    start_date=start, end_date=end,
-                                    adjust="qfq")
-        if df is None or len(df) < 30:
-            return None
-        col = "收盘" if "收盘" in df.columns else "Close"
-        if col not in df.columns:
-            return None
-        ret = df[col].pct_change().dropna()
-        return float(ret.std() * (252 ** 0.5))
-    except Exception as e:
-        logger.debug(f"Volatility failed for {code}: {e}")
-        return None
-
-
-def _default_risk_level(sub_type: str, config: dict) -> str:
-    rules = config.get("volatility_rules", {})
-    for lvl in ("high", "medium", "low"):
-        if sub_type in rules.get(lvl, []):
-            return lvl
-    return "medium"
-
-
 def _collect_dimensions(
     all_records: list[HoldingRecord], fund_holdings: dict,
     config: dict, cache_dir: str, date: str
-) -> tuple[dict, dict, dict]:
-    """Step 5.3: Collect industry, region, volatility.
+) -> tuple[dict, dict]:
+    """Step 5.3: Collect industry, region.
 
     行业数据采集策略（修正版）：
     - 基金持仓：直接用基金代码调 fund_portfolio_industry_allocation_em，
-      获取该基金的行业分布（正确用途），存为 fund_industry_detail
-    - 直接持有的 A 股个股：标记为"个股-直接持有"，不再查单股行业
-      （单股行业查询需要 stock_individual_info_em，该接口不稳定）
+      获取该基金的行业分布（正确用途），写入 SQLite fund_industry_allocation 表
+    - 直接持有的 A 股个股：标记为"个股-直接持有"
     - 海外股票：直接标记为"海外"
     """
-    ind_path = os.path.join(cache_dir, "stock_industry.json")
     reg_path = os.path.join(cache_dir, "security_region.json")
-    vol_path = os.path.join(cache_dir, "volatility.json")
-    fund_ind_path = os.path.join(cache_dir, "fund_industry.json")
 
-    industry  = load_json(ind_path)
+    industry: dict = {}
     regions   = load_json(reg_path)
-    vol_data  = load_json(vol_path)
-    # fund_industry 存放每只基金的完整行业分布列表
-    fund_industry: dict[str, list[dict]] = load_json(fund_ind_path)
 
     # 地区标注：所有记录
     for rec in all_records:
@@ -471,30 +510,35 @@ def _collect_dimensions(
                 # A股个股：标记 region，行业留空等待后续补充
                 industry[rec.code] = {"industry_l1": "个股", "industry_l2": "个股"}
 
-    # 基金行业分布：用基金代码直接查（正确用途）
+    # 基金行业分布：用基金代码直接查，写入 SQLite
     fund_records = [r for r in all_records if r.asset_class == "fund"
                     and r.sub_type not in ("money_fund", "commodity_fund")]
     logger.info(f"Collecting fund industry for {len(fund_records)} funds...")
     n_queried = 0
     for rec in fund_records:
-        if rec.code in fund_industry:
+        if rec.code in industry:
             continue
         time.sleep(_API_DELAY)
         rows = _query_fund_industry(rec.code, date)
         if rows:
-            fund_industry[rec.code] = rows
             # 取 top 行业写入 industry dict（供 penetrated_details 展示）
             top_l1, top_l2 = _get_top_industry(rows)
             industry[rec.code] = {"industry_l1": top_l1, "industry_l2": top_l2}
             n_queried += 1
+
+            # 写入 SQLite fund_industry_allocation 表
+            industry_data = [{"industry_name": r["industry_name"],
+                              "industry_pct": r["pct"]} for r in rows]
+            report_date = date[:4] if date else str(datetime.now().year)
+            save_fund_industry_allocation(
+                rec.code, report_date, industry_data,
+                data_source="fund_portfolio_industry_allocation_em")
+
             logger.info(f"Fund {rec.code} ({rec.name}): top industry={top_l1} "
                         f"({len(rows)} sectors)")
         else:
-            fund_industry[rec.code] = []
             industry[rec.code] = {"industry_l1": "未知", "industry_l2": "未知"}
     logger.info(f"Fund industry: queried {n_queried} new funds")
-
-    save_json(fund_industry, fund_ind_path)
 
     # 同步 fund_holdings 里的底层股票行业（已知来源：fund_holdings，标记为"基金持股"）
     for _, holdings in fund_holdings.items():
@@ -512,43 +556,12 @@ def _collect_dimensions(
                            if v.get("industry_l1") not in ("未知", "海外", "个股"))
     logger.info(f"Industry: {len(industry)} total, {n_queried_stocks} with known sector")
 
-    # Volatility
-    logger.info("Collecting volatility data...")
-    vol_n = 0
-    for rec in all_records:
-        if rec.code in vol_data:
-            continue
-        if rec.asset_class == "fund":
-            vol_data[rec.code] = {
-                "annual_volatility": None,
-                "risk_level": _default_risk_level(rec.sub_type, config)}
-            continue
-        if (rec.asset_class == "equity"
-                and rec.sub_type == "stock_cn" and vol_n < 20):
-            time.sleep(_API_DELAY)
-            vol = _compute_volatility(rec.code)
-            if vol is not None:
-                rl = ("high" if vol > 0.35
-                      else ("medium" if vol > 0.20 else "low"))
-                vol_data[rec.code] = {
-                    "annual_volatility": round(vol, 4),
-                    "risk_level": rl}
-                vol_n += 1
-                continue
-        vol_data[rec.code] = {
-            "annual_volatility": None,
-            "risk_level": _default_risk_level(
-                rec.sub_type or "other", config)}
-    logger.info(f"Volatility: computed {vol_n} stocks")
-
-    save_json(industry, ind_path)
     save_json(regions, reg_path)
-    save_json(vol_data, vol_path)
 
-    # Batch persist industry data to SQLite
+    # Batch persist stock industry data to SQLite
     batch_save_stock_industry(industry)
 
-    return industry, regions, vol_data
+    return industry, regions
 
 
 # ===========================================================================
@@ -684,7 +697,7 @@ def _add_equity_details(
 
 def _build_summary(
     all_records, allocs, fund_h, fund_bh, idx_c,
-    industry, regions, vol_data, config, cache_dir,
+    industry, regions, config, cache_dir,
     *, deep: bool = True,
 ) -> dict:
     """Step 5.4: Build the two-level penetration summary."""
@@ -703,7 +716,6 @@ def _build_summary(
         mv = (rec.market_value_cny
               or rec.market_value * fx.get(rec.currency, 1.0))
         rgn = regions.get(rec.code, "CN")
-        vi = vol_data.get(rec.code, {})
 
         if rec.asset_class == "equity":
             l1["individual_stock"] += mv
@@ -711,8 +723,7 @@ def _build_summary(
             ind = industry.get(rec.code, {})
             details.append(_detail(
                 rec, mv, "individual_stock", "equity", rgn,
-                ind, vi.get("risk_level", "high"),
-                vi.get("annual_volatility")))
+                ind, "high", None))
 
         elif rec.asset_class == "bond":
             l1["other"] += mv
@@ -729,7 +740,7 @@ def _build_summary(
                 l2["other"] += mv
                 details.append(_detail(
                     rec, mv, rec.sub_type, "other", rgn,
-                    {}, vi.get("risk_level", "medium"), None))
+                    {}, "medium", None))
                 continue
 
             l1[_sub_type_to_l1(rec.sub_type)] += mv
@@ -757,7 +768,7 @@ def _build_summary(
                     rec, eq_mv, rec.sub_type, "equity", rgn,
                     {"industry_l1": "基金股票部分",
                      "industry_l2": "基金股票部分"},
-                    vi.get("risk_level", "high"), None,
+                    "high", None,
                     suffix=" (股票部分)"))
 
             # Bond portion
@@ -790,7 +801,7 @@ def _build_summary(
             details.append(_detail(
                 rec, mv, "other", "other", rgn,
                 {"industry_l1": "其他", "industry_l2": "其他"},
-                vi.get("risk_level", "medium"), None))
+                "medium", None))
 
     total = sum(l1.values())
 
@@ -817,8 +828,7 @@ def _build_summary(
         "cache_files": [
             "fund_allocation.json", "fund_holdings.json",
             "fund_bond_holdings.json", "index_constituents.json",
-            "stock_industry.json", "security_region.json",
-            "volatility.json", "penetrated_holdings.json"],
+            "security_region.json", "penetrated_holdings.json"],
     }, os.path.join(cache_dir, "data_snapshot_meta.json"))
 
     def _fmt(d):
@@ -850,7 +860,7 @@ def penetrate_funds(
         records: Classified HoldingRecord list.
         config: Configuration dict from config.yaml.
         deep_penetration: If True, run full individual stock-level
-            penetration (5.2 holdings + 5.3 industry/volatility).
+            penetration (5.2 holdings + 5.3 industry).
             If False (default), only run 5.1 allocation and produce
             fund-level summary without expanding to individual stocks.
             Can also be set via config["deep_penetration"].
@@ -878,24 +888,18 @@ def penetrate_funds(
         # 5.2 - Deep mode: fetch individual stock + bond holdings
         fund_h, fund_bh, idx_c = _penetrate_holdings(
             funds, config, cache_dir, date=date)
-        # 5.3 - Deep mode: collect industry / region / volatility
-        industry, regions, vol = _collect_dimensions(
+        # 5.3 - Deep mode: collect industry / region（含底层持股行业标注）
+        industry, regions = _collect_dimensions(
             records, fund_h, config, cache_dir, date)
     else:
-        # Shallow mode: skip 5.2/5.3, use empty placeholders
+        # Shallow mode: skip 5.2, use empty placeholders
         fund_h, fund_bh, idx_c = {}, {}, {}
-        industry, regions, vol = {}, {}, {}
-        # Still classify region for top-level records
-        for rec in records:
-            regions[rec.code] = _classify_region(
-                rec.code, rec.currency, rec.raw_info)
-            vol[rec.code] = {
-                "annual_volatility": None,
-                "risk_level": _default_risk_level(
-                    rec.sub_type or "other", config)}
-        logger.info("5.2/5.3 skipped (deep_penetration=False)")
+        # 5.3 - 即使浅模式也执行行业分布采集，写入 SQLite
+        industry, regions = _collect_dimensions(
+            records, fund_h, config, cache_dir, date)
+        logger.info("5.2 skipped (deep_penetration=False), 5.3 industry executed")
 
     return _build_summary(
         records, allocs, fund_h, fund_bh, idx_c,
-        industry, regions, vol, config, cache_dir,
+        industry, regions, config, cache_dir,
         deep=deep)
