@@ -178,7 +178,7 @@ def test_correlation():
         print("  模式 B: 数据不足")
 
 
-def compute_and_save():
+def compute_and_save(windows: list[str] = ["1M", "1Y"]):
     """全量计算指标并保存到 JSON + SQLite。"""
     print("\n" + "=" * 60)
     print("全量计算: compute_all_indicators() + 保存到 SQLite")
@@ -193,7 +193,7 @@ def compute_and_save():
         config = yaml.safe_load(f)
 
     # 计算所有窗口的指标（保存到 JSON）
-    result = compute_all_indicators(config, windows=["1M", "1Y"])
+    result = compute_all_indicators(config, windows=windows)
 
     if result:
         print(f"  计算时间: {result['computed_at']}")
@@ -220,7 +220,9 @@ if __name__ == "__main__":
     test_single_asset_metrics(valid_codes)
     test_portfolio_metrics()
     test_correlation()
-    compute_and_save()
+
+    windows =  ["1M", "3M", "6M", "1Y", "5Y", "10Y"]
+    compute_and_save(windows=windows)
 
     print("\n" + "=" * 60)
     print("全部完成!")

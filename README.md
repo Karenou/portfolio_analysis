@@ -313,7 +313,7 @@ python3 main.py --deep=True
 |------|---------|---------|
 | 解析+穿透(单平台) | `script/get_xxx_penetration.py` | `python3 -m script.get_alipay_penetration --file alipay_20260225.pdf --date 20260225` |
 | 获取历史价格 | `script/fetch_nav_data.py` | `python3 -m script.fetch_nav_data --all` |
-| 计算指标 | `script/test_indicators.py` | `python3 -m script.test_indicators` |
+| 计算指标 | `script/compute_indicator.py` | `python3 -m script.compute_indicator` |
 
 ```bash
 # 支付宝（基金类，支持 deep 穿透）
@@ -325,51 +325,96 @@ python3 -m script.get_huatai_penetration --file huatai_20250213.xlsx --date 2025
 # 富途（券商类）
 python3 -m script.get_futu_penetration --file futu_20260225.pdf --date 20260225
 
-# 抓取全量历史行情
+# 抓取全量历史行情（基金历史净值和个股历史价格）
 python3 -m script.fetch_nav_data --all
 
 # 计算量化指标
-python3 -m script.test_indicators
+python3 -m script.compute_indicator
+
+# 获取个股的行业分布，和基金的行业穿透数据
+python3 -m script.test_industry_to_sqlite.py
+
+# 可视化
+streamlit run dashboard/app.py
 ```
 
 ## 项目结构
 
 ```
 portfolio_analysis/
-├── main.py                  # 主程序入口，编排全流程
-├── config.yaml              # 配置文件（平台/汇率/默认配置/路径）
-├── models.py                # 数据模型（HoldingRecord / FundAllocation / BaseParser）
-├── requirements.txt         # Python 依赖
+├── main.py                     # 主程序入口，编排全流程
+├── config.yaml                 # 配置文件（平台/汇率/默认配置/路径）
+├── models.py                   # 数据模型（HoldingRecord / FundAllocation / BaseParser）
+├── requirements.txt            # Python 依赖
+├── token.json                  # API Token 配置
 │
-├── data/                    # 原始持仓文件（PDF/Excel），需手动放入
+├── data/                       # 原始持仓文件（PDF/Excel），需手动放入
+│   ├── alipay_*.pdf            #   支付宝持仓 PDF
+│   ├── qieman_*.pdf            #   且慢持仓 PDF
+│   ├── snowball_*.pdf          #   雪球持仓 PDF
+│   ├── huatai_*.xlsx           #   华泰持仓 Excel
+│   └── futu_*.pdf              #   富途每日结单 PDF
 │
-├── parsers/                 # 各平台文件解析器
-│   ├── alipay_parser.py     #   支付宝 PDF 解析
-│   ├── qieman_parser.py     #   且慢 PDF 解析
-│   ├── snowball_parser.py   #   雪球 PDF 解析
-│   ├── huatai_parser.py     #   华泰 Excel 解析
-│   └── futu_parser.py       #   富途 PDF 解析
+├── parsers/                    # 各平台文件解析器
+│   ├── __init__.py
+│   ├── alipay_parser.py        #   支付宝 PDF 解析
+│   ├── qieman_parser.py        #   且慢 PDF 解析
+│   ├── snowball_parser.py      #   雪球 PDF 解析
+│   ├── huatai_parser.py        #   华泰 Excel 解析
+│   └── futu_parser.py          #   富途 PDF 解析
 │
-├── analyzers/               # 分析引擎
-│   ├── classifier.py        #   资产分类器（按代码/名称判定类型）
-│   ├── fund_penetration.py  #   基金穿透（拆解底层资产配置）
-│   ├── fund_nav_db.py       #   SQLite 数据库管理（行情/行业数据）
-│   ├── aggregator.py        #   跨平台聚合器
-│   └── cache_utils.py       #   JSON 缓存工具函数
+├── analyzers/                  # 分析引擎
+│   ├── __init__.py
+│   ├── classifier.py           #   资产分类器（按代码/名称判定类型）
+│   ├── fund_penetration.py     #   基金穿透（拆解底层资产配置）
+│   ├── fund_nav_db.py          #   SQLite 数据库管理（行情/行业数据）
+│   ├── aggregator.py           #   跨平台聚合器
+│   ├── indicators.py           #   量化指标计算（收益率/波动率/夏普/相关性）
+│   └── cache_utils.py          #   JSON 缓存工具函数
 │
-├── script/                    # 各平台独立脚本
-│   ├── get_alipay_penetration.py
-│   ├── get_qieman_penetration.py
-│   ├── get_snowball_penetration.py
-│   ├── get_huatai_penetration.py
-│   ├── get_futu_penetration.py
-│   ├── test_parsers.py      #   解析器单元测试
-│   └── inspect_data.py      #   数据文件结构检查工具
+├── script/                     # 可执行脚本（python3 -m script.xxx）
+│   ├── __init__.py
+│   ├── get_alipay_penetration.py   # 支付宝穿透
+│   ├── get_qieman_penetration.py   # 且慢穿透
+│   ├── get_snowball_penetration.py # 雪球穿透
+│   ├── get_huatai_penetration.py   # 华泰穿透
+│   ├── get_futu_penetration.py     # 富途穿透
+│   ├── fetch_nav_data.py           # 抓取历史行情数据
+│   ├── compute_indicator.py        # 计算量化指标
+│   ├── inspect_data.py             # 数据文件结构检查工具
+│   ├── test_parsers.py             # 解析器单元测试
+│   └── test_industry_to_sqlite.py  # 行业数据入库测试
 │
-├── cache/                   # 缓存目录
-│   ├── fund_nav.db          #   SQLite 数据库（持久化）
-│   └── {platform}/          #   各平台 JSON 中间结果（每次运行清除）
+├── dashboard/                  # Streamlit 可视化看板
+│   ├── __init__.py
+│   ├── app.py                  #   看板主入口（streamlit run dashboard/app.py）
+│   ├── pages/                  #   多页面模块
+│   │   ├── __init__.py
+│   │   ├── overview.py         #     总览页（资产配置饼图/平台分布）
+│   │   ├── holdings.py         #     持仓明细页
+│   │   ├── portfolio.py        #     组合分析页（加权收益/波动/夏普）
+│   │   └── asset_metrics.py    #     个股体检页（单资产指标详情）
+│   └── utils/                  #   工具模块
+│       ├── __init__.py
+│       ├── data_loader.py      #     数据加载器（读取缓存/SQLite）
+│       └── chart_helper.py     #     图表绘制辅助函数
 │
-└── output/                  # 输出目录
+│
+├── develop_log/                # 开发日志与设计文档
+│   ├── akshare_api.md          #   akshare API 调研笔记
+│   ├── dashboard.md            #   看板设计文档
+│   ├── extract_data.md         #   数据提取设计
+│   └── indicator_items.md      #   指标项设计说明
+│
+├── cache/                      # 缓存目录
+│   ├── fund_nav.db             #   SQLite 数据库（持久化，行情/行业数据）
+│   ├── indicator_results.json  #   量化指标计算结果缓存
+│   ├── alipay/                 #   支付宝穿透中间结果
+│   ├── futu/                   #   富途穿透中间结果
+│   ├── huatai/                 #   华泰穿透中间结果
+│   ├── qieman/                 #   且慢穿透中间结果
+│   └── snowball/               #   雪球穿透中间结果
+│
+└── output/                     # 输出目录
     └── aggregated_summary_YYYYMMDD.json  # 最终汇总报告
 ```
