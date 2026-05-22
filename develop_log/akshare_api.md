@@ -25,6 +25,65 @@
 | 15 | `stock_individual_basic_info_us_xq` | `script/test_industry_to_sqlite.py` | 美股个股基本信息（雪球） |
 | 16 | `stock_hk_company_profile_em` | `script/test_industry_to_sqlite.py` | 港股个股公司概况（东方财富） |
 
+
+---
+
+## 数据来源和调用逻辑
+- A 股个股（如 600887 伊利）→ 从 cache/huatai/classified_holdings.json 读股票列表，调用 akshare 的 stock_zh_a_daily 接口抓取
+- 港股个股（如 00700 腾讯）→ 从 cache/futu/classified_holdings.json 读港股列表，调用 akshare 的 stock_hk_daily 接口抓取
+- 美股个股（如 PDD 拼多多）→ 从 cache/futu/classified_holdings.json 读美股列表，调用 akshare 的 stock_us_daily 接口抓取
+
+
+### akshare调用接口判断逻辑                   
+                    ┌────────────────────┐
+                    │   一个持仓资产      │
+                    └─────────┬──────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │  判断地区(region)   │
+                    └─────────┬──────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+    ┌───────▼───────┐ ┌──────▼──────┐ ┌───────▼───────┐
+    │  HK (港股)     │ │  US (美股)   │ │  CN (中国)    │
+    │  currency=HKD  │ │  currency=  │ │  currency=   │
+    │  或 futu.HKD   │ │  USD        │ │  CNY         │
+    └───────┬───────┘ └──────┬──────┘ └───────┬───────┘
+            │                │                 │
+            ▼                ▼                 │
+  ┌──────────────┐ ┌──────────────┐           │
+  │stock_hk_daily│ │stock_us_daily│  ┌────────┴────────┐
+  │              │ │              │  │ 判断场内 vs 场外  │
+  │不区分ETF/股票  │ │不区分ETF/股票│   └────────┬────────┘
+  │统一用此接口    │ │统一用此接口  │             │
+  │存stock_daily │ │存stock_daily │     ┌─────┴─────┐
+  │_hist         │ │_hist         │     │           │
+  │market=H-share│ │market=US     │     ▼           ▼
+  └──────────────┘ └──────────────┘  ┌──────┐   ┌──────────┐
+                                     │ 场内  │   │  场外     │
+                                     │(ETF/ │   │ (OTC基金) │
+                                     │ 个股) │   │           │
+                                     └──┬───┘   └────┬─────┘
+                                        │            │
+                                  ┌─────┴─────┐     │
+                                  │           │     │
+                                  ▼           ▼     ▼
+                          ┌───────────┐ ┌────────┐ ┌────────────────────┐
+                          │ etf       │ │stock_cn│ │ fund_open_fund_    │
+                          │fund_etf_  │ │stock_  │ │ info_em 或         │
+                          │fund_info  │ │zh_a_   │ │ fund_money_fund_   │
+                          │_em        │ │daily   │ │ info_em            │
+                          │           │ │        │ │                    │
+                          │存etf_     │ │存stock_│ │存fund_daily_nav    │
+                          │daily_hist │ │daily_  │ │                    │
+                          │           │ │hist    │ │                    │
+                          └───────────┘ │market= │ └────────────────────┘
+                                        │A-share │
+                                        └────────┘
+
+
+
 ---
 
 ## 详细说明
