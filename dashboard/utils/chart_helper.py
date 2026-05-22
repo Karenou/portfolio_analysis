@@ -231,20 +231,34 @@ def create_heatmap(labels: list, matrix: list, title: str = "") -> go.Figure:
 
 def create_scatter_risk_return(df, title: str = "") -> go.Figure:
     """创建风险收益散点图"""
+    # 将市值放大2倍作为散点尺寸，使散点更清晰可见
+    df = df.copy()
+    df["_size"] = df["market_value_cny"] * 2
+
     fig = px.scatter(
         df,
         x="volatility",
         y="annualized_return",
-        size="market_value_cny",
+        size="_size",
         color="asset_class",
         color_discrete_map=ASSET_COLORS,
         hover_name="name",
+        hover_data={
+            "volatility": ":.0%",
+            "annualized_return": ":.0%",
+            "market_value_cny": ":,.0f",
+            "_size": False,
+            "asset_class": False,
+        },
         title=title,
         labels={
             "volatility": "波动率（风险）",
             "annualized_return": "年化收益（回报）",
+            "market_value_cny": "持仓市值",
         },
     )
+    # 设置散点最小尺寸，防止小市值资产不可见
+    fig.update_traces(marker=dict(sizemin=6))
     # 添加无风险利率水平线
     fig.add_hline(
         y=0.018,
@@ -259,10 +273,12 @@ def create_scatter_risk_return(df, title: str = "") -> go.Figure:
         xaxis=dict(
             title=dict(text="波动率（风险）", font=dict(color="#333333")),
             tickfont=dict(color="#333333"),
+            tickformat=".0%",
         ),
         yaxis=dict(
             title=dict(text="年化收益（回报）", font=dict(color="#333333")),
             tickfont=dict(color="#333333"),
+            tickformat=".0%",
         ),
     )
     return fig

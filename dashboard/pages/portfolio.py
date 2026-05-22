@@ -40,12 +40,13 @@ def render():
     # 内嵌控件：时间窗口切换
     window = st.radio(
         "时间窗口",
-        ["1M", "1Y"],
+        ["1M", "3M", "6M", "1Y"],
         horizontal=True,
-        index=1,
+        index=3,
         key="portfolio_window",
     )
-    window_label = "近1月" if window == "1M" else "近1年"
+    window_map = {"1M": "近1月", "3M": "近3月", "6M": "近6月", "1Y": "近1年"}
+    window_label = window_map.get(window, window)
     
     portfolio = get_portfolio_metrics(indicator_data, window)
     
@@ -119,7 +120,7 @@ def render():
     
     # ===== 区块 3：风险收益全景散点图 =====
     st.markdown("### 风险收益全景")
-    st.caption("横轴=波动率（风险），纵轴=年化收益（回报），理想位置=左上角")
+    st.caption("横轴=波动率（风险），纵轴=年化收益（回报），理想位置=左上角。部分持仓市值过小的基金，统一按照1000元市值展示，便于可视化。")
     
     # 获取单资产指标
     df_metrics = get_single_asset_metrics(indicator_data)
