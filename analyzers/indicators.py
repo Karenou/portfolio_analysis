@@ -9,6 +9,7 @@
 
 import logging
 import os
+import re
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
@@ -34,6 +35,7 @@ _WINDOW_DAYS = {
     "1Y": 365,
     "3Y": 365 * 3,
     "5Y": 365 * 5,
+    "10Y": 365 * 10
 }
 
 
@@ -633,6 +635,10 @@ def _load_holdings_with_weights(cache_dir: str = "cache") -> list[dict]:
         return []
 
     # 合并同一 code 的持仓（跨平台去重求和）
+    def _strip_part_suffix(name: str) -> str:
+        """去掉穿透产生的后缀，如 ' (股票部分)' ' (债券部分)' 等"""
+        return re.sub(r'\s*\((股票|债券|现金|商品|其他)部分\)\s*$', '', name)
+
     merged = {}
     for d in all_details:
         code = d.get("code", "")
@@ -643,7 +649,7 @@ def _load_holdings_with_weights(cache_dir: str = "cache") -> list[dict]:
         else:
             merged[code] = {
                 "code": code,
-                "name": d.get("name", ""),
+                "name": _strip_part_suffix(d.get("name", "")),
                 "true_asset_class": d.get("true_asset_class", "other"),
                 "market_value_cny": d.get("market_value_cny", 0),
             }
