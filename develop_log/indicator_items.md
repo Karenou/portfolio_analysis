@@ -212,7 +212,7 @@ analyzers/indicators.py
 
 ### Step 4：写测试脚本验证
 
-创建 `script/test_indicators.py`，验证各个指标的计算正确性
+创建 `script/compute_indicator.py`，计算各个指标并保存到 JSON + SQLite
 
 ---
 
@@ -232,7 +232,7 @@ analyzers/indicators.py
 
 新增的文件：
 ├── analyzers/indicators.py    ← 核心新文件
-└── script/test_indicators.py    ← 测试脚本
+└── script/compute_indicator.py    ← 指标计算脚本
 ```
 
 ---
