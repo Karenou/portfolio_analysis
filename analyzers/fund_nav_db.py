@@ -107,6 +107,35 @@ CREATE TABLE IF NOT EXISTS stock_industry (
     data_source  TEXT,
     last_updated TEXT
 );
+
+CREATE TABLE IF NOT EXISTS indicator_results (
+    asset_code   TEXT NOT NULL,
+    asset_name   TEXT,
+    window       TEXT NOT NULL,
+    metric_name  TEXT NOT NULL,
+    metric_value REAL,
+    computed_at  TEXT,
+    PRIMARY KEY (asset_code, window, metric_name)
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_code ON indicator_results(asset_code);
+CREATE INDEX IF NOT EXISTS idx_indicator_window ON indicator_results(window);
+
+CREATE TABLE IF NOT EXISTS indicator_portfolio (
+    window       TEXT NOT NULL,
+    metric_name  TEXT NOT NULL,
+    metric_value REAL,
+    computed_at  TEXT,
+    PRIMARY KEY (window, metric_name)
+);
+
+CREATE TABLE IF NOT EXISTS indicator_correlation (
+    corr_type    TEXT NOT NULL,
+    labels       TEXT,
+    matrix       TEXT,
+    data_points  INTEGER,
+    computed_at  TEXT,
+    PRIMARY KEY (corr_type)
+);
 """
 
 
@@ -560,10 +589,11 @@ def fetch_and_store_stock_hist(db_path: str = _DB_PATH):
 
 
 def fetch_and_store_stock_hk_hist(db_path: str = _DB_PATH):
-    """获取并存储富途港股持仓的历史行情数据。
+    """获取并存储富途港区持仓的历史行情数据（港股 + 港区ETF）。
 
-    读取 cache/futu/classified_holdings.json 中 sub_type='stock_hk' 的记录。
-    使用 akshare 的 stock_hk_daily 接口（新浪数据源，全量返回后本地过滤）。
+    路由规则：currency == 'HKD' 且 sub_type in ('stock_hk', 'etf')，
+    统一使用 akshare 的 stock_hk_daily 接口。
+    排除黑名单代码（如港区场外债基 HK0000369188，akshare 无此数据源）。
     """
     holdings = load_json("cache/futu/classified_holdings.json")
     if not holdings:
@@ -573,9 +603,15 @@ def fetch_and_store_stock_hk_hist(db_path: str = _DB_PATH):
     if isinstance(holdings, dict):
         holdings = list(holdings.values())
 
-    hk_stocks = [h for h in holdings if h.get("sub_type") == "stock_hk"]
+    # 按 currency=HKD 筛选港区所有可交易品种（股票 + ETF）
+    # 排除黑名单：港区场外基金等 akshare 不支持的品种
+    _HK_SKIP_LIST = {"HK0000369188"}
+    hk_stocks = [h for h in holdings
+                 if h.get("currency") == "HKD"
+                 and h.get("sub_type") in ("stock_hk", "etf")
+                 and h.get("code") not in _HK_SKIP_LIST]
     if not hk_stocks:
-        logger.info("No HK stock holdings found in Futu")
+        logger.info("No HK holdings (stock/ETF) found in Futu")
         return
 
     conn = _get_conn(db_path)
@@ -627,10 +663,10 @@ def fetch_and_store_stock_hk_hist(db_path: str = _DB_PATH):
 
 
 def fetch_and_store_stock_us_hist(db_path: str = _DB_PATH):
-    """获取并存储富途美股持仓的历史行情数据。
+    """获取并存储富途美区持仓的历史行情数据（美股 + 美区ETF）。
 
-    读取 cache/futu/classified_holdings.json 中 sub_type='stock_us' 的记录。
-    使用 akshare 的 stock_us_daily 接口（新浪数据源，全量返回后本地过滤）。
+    路由规则：currency == 'USD' 且 sub_type in ('stock_us', 'etf')，
+    统一使用 akshare 的 stock_us_daily 接口。
     """
     holdings = load_json("cache/futu/classified_holdings.json")
     if not holdings:
@@ -640,9 +676,12 @@ def fetch_and_store_stock_us_hist(db_path: str = _DB_PATH):
     if isinstance(holdings, dict):
         holdings = list(holdings.values())
 
-    us_stocks = [h for h in holdings if h.get("sub_type") == "stock_us"]
+    # 按 currency=USD 筛选美区所有可交易品种（股票 + ETF）
+    us_stocks = [h for h in holdings
+                 if h.get("currency") == "USD"
+                 and h.get("sub_type") in ("stock_us", "etf")]
     if not us_stocks:
-        logger.info("No US stock holdings found in Futu")
+        logger.info("No US holdings (stock/ETF) found in Futu")
         return
 
     conn = _get_conn(db_path)
@@ -1023,3 +1062,97 @@ def _compute_correlation_matrix(return_series: dict) -> dict:
         "matrix": matrix,
         "data_points": len(df),
     }
+
+
+# ──────────────────────────────────────────────
+# 指标结果保存到 SQLite
+# ──────────────────────────────────────────────
+
+def save_indicator_results_to_db(result: dict, db_path: str = _DB_PATH):
+    """将 compute_all_indicators 的结果保存到 SQLite 的 indicator 系列表中。
+
+    策略：使用 INSERT OR REPLACE，每次运行会覆盖同一 (asset_code, window, metric_name) 的值。
+    新增指标会自动追加行，无需修改表结构。
+    """
+    import json as _json
+
+    computed_at = result.get("computed_at", "")
+    conn = _get_conn(db_path)
+    cur = conn.cursor()
+
+    # 1. 保存单资产指标 → indicator_results 表
+    single_metrics = result.get("single_asset_metrics", {})
+    rows_asset = []
+    for code, info in single_metrics.items():
+        name = info.get("name", "")
+        windows = info.get("windows", {})
+        for window, metrics in windows.items():
+            for metric_name, metric_value in metrics.items():
+                if metric_name == "data_points":
+                    continue  # 跳过辅助字段
+                rows_asset.append((code, name, window, metric_name, metric_value, computed_at))
+
+    if rows_asset:
+        cur.executemany(
+            "INSERT OR REPLACE INTO indicator_results "
+            "(asset_code, asset_name, window, metric_name, metric_value, computed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            rows_asset,
+        )
+        logger.info(f"indicator_results: saved {len(rows_asset)} rows")
+
+    # 2. 保存组合指标 → indicator_portfolio 表
+    portfolio_metrics = result.get("portfolio_metrics", {})
+    rows_portfolio = []
+    for window, metrics in portfolio_metrics.items():
+        for metric_name, metric_value in metrics.items():
+            if metric_name == "correlation_by_asset_class":
+                continue  # 相关性矩阵单独存
+            rows_portfolio.append((window, metric_name, metric_value, computed_at))
+
+    if rows_portfolio:
+        cur.executemany(
+            "INSERT OR REPLACE INTO indicator_portfolio "
+            "(window, metric_name, metric_value, computed_at) "
+            "VALUES (?, ?, ?, ?)",
+            rows_portfolio,
+        )
+        logger.info(f"indicator_portfolio: saved {len(rows_portfolio)} rows")
+
+    # 3. 保存相关性矩阵 → indicator_correlation 表
+    #    portfolio_metrics 内的 correlation_by_asset_class 按 window 存
+    rows_corr = []
+    for window, metrics in portfolio_metrics.items():
+        corr_data = metrics.get("correlation_by_asset_class")
+        if corr_data:
+            rows_corr.append((
+                f"asset_class_{window}",
+                _json.dumps(corr_data.get("labels", []), ensure_ascii=False),
+                _json.dumps(corr_data.get("matrix", []), ensure_ascii=False),
+                corr_data.get("data_points"),
+                computed_at,
+            ))
+
+    # 顶层的 correlation_by_asset_class（全窗口汇总）
+    top_corr = result.get("correlation_by_asset_class")
+    if top_corr:
+        rows_corr.append((
+            "asset_class_all",
+            _json.dumps(top_corr.get("labels", []), ensure_ascii=False),
+            _json.dumps(top_corr.get("matrix", []), ensure_ascii=False),
+            top_corr.get("data_points"),
+            computed_at,
+        ))
+
+    if rows_corr:
+        cur.executemany(
+            "INSERT OR REPLACE INTO indicator_correlation "
+            "(corr_type, labels, matrix, data_points, computed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            rows_corr,
+        )
+        logger.info(f"indicator_correlation: saved {len(rows_corr)} rows")
+
+    conn.commit()
+    conn.close()
+    logger.info("All indicator results saved to SQLite")

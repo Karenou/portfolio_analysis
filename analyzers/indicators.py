@@ -389,8 +389,14 @@ def calc_portfolio_volatility(holdings: list[dict], start_date: str, end_date: s
 
     # 协方差矩阵（年化）
     cov_matrix = df.cov() * 252
+    # 检查协方差矩阵是否包含异常值
+    if cov_matrix.isnull().any().any() or np.isinf(cov_matrix.values).any():
+        return _calc_simple_weighted_vol(holdings, start_date, end_date, db_path)
+
     # Portfolio 波动率 = √(w^T · Σ · w)
     port_var = float(w @ cov_matrix.values @ w)
+    if np.isnan(port_var) or np.isinf(port_var) or port_var < 0:
+        return _calc_simple_weighted_vol(holdings, start_date, end_date, db_path)
     port_vol = np.sqrt(port_var)
 
     return round(float(port_vol), 6)
@@ -575,7 +581,11 @@ def calc_all_portfolio(holdings: list[dict], start_date: str, end_date: str,
 # ══════════════════════════════════════════════════════════════
 
 def _load_holdings_with_weights(cache_dir: str = "cache") -> list[dict]:
-    """从各平台的 penetrated_holdings.json 加载持仓并计算权重。
+    """从各平台的 penetrated_holdings.json 和 classified_holdings.json 加载持仓并计算权重。
+
+    数据来源：
+      1. penetrated_holdings.json — 场外基金穿透后的底层持仓
+      2. classified_holdings.json — 个股、场内ETF等直接持仓（futu、huatai等券商平台）
 
     Returns:
         持仓列表，每项含 code, name, weight, true_asset_class, market_value_cny
@@ -591,12 +601,33 @@ def _load_holdings_with_weights(cache_dir: str = "cache") -> list[dict]:
         subdir = os.path.join(cache_dir, entry)
         if not os.path.isdir(subdir):
             continue
+
+        # 来源1: penetrated_holdings.json（场外基金穿透）
         ph_path = os.path.join(subdir, "penetrated_holdings.json")
         if os.path.isfile(ph_path):
             data = load_json(ph_path)
             details = data.get("penetrated_details", [])
             all_details.extend(details)
             total_mv += data.get("total_market_value_cny", 0)
+
+        # 来源2: classified_holdings.json（个股/场内ETF等直接持仓）
+        ch_path = os.path.join(subdir, "classified_holdings.json")
+        if os.path.isfile(ch_path):
+            classified = load_json(ch_path)
+            if isinstance(classified, list):
+                for item in classified:
+                    mv = item.get("market_value_cny", 0)
+                    # 映射 asset_class → true_asset_class
+                    asset_class = item.get("asset_class", "other")
+                    sub_type = item.get("sub_type", "")
+                    true_ac = _map_asset_class(asset_class, sub_type, item.get("level2_allocation", {}))
+                    all_details.append({
+                        "code": item.get("code", ""),
+                        "name": item.get("name", ""),
+                        "market_value_cny": mv,
+                        "true_asset_class": true_ac,
+                    })
+                    total_mv += mv
 
     if total_mv <= 0 or not all_details:
         return []
@@ -627,6 +658,54 @@ def _load_holdings_with_weights(cache_dir: str = "cache") -> list[dict]:
     return holdings
 
 
+def _map_asset_class(asset_class: str, sub_type: str, level2: dict) -> str:
+    """将 classified_holdings 的 asset_class/sub_type 映射为统一的 true_asset_class。
+
+    映射规则：
+      - equity / stock_* → "equity"
+      - bond / bond_fund → "bond"
+      - commodity_fund / commodity → "commodity"
+      - fund + level2_allocation 判断主要成分
+      - 其余 → "other"
+    """
+    if asset_class == "equity":
+        return "equity"
+    if asset_class == "bond":
+        return "bond"
+    if asset_class == "commodity":
+        return "commodity"
+
+    # fund 类需看 sub_type 或 level2_allocation
+    if sub_type in ("bond_fund",):
+        return "bond"
+    if sub_type in ("commodity_fund",):
+        return "commodity"
+    if sub_type in ("money_fund",):
+        return "other"
+
+    # 通过 level2_allocation 判断
+    if level2:
+        equity_pct = level2.get("equity_pct", 0)
+        bond_pct = level2.get("bond_pct", 0)
+        commodity_pct = level2.get("commodity_pct", 0)
+        cash_pct = level2.get("cash_pct", 0)
+        max_pct = max(equity_pct, bond_pct, commodity_pct, cash_pct)
+        if max_pct == cash_pct and cash_pct >= 0.8:
+            return "other"
+        if max_pct == equity_pct:
+            return "equity"
+        if max_pct == bond_pct:
+            return "bond"
+        if max_pct == commodity_pct:
+            return "commodity"
+
+    # ETF 默认归为 equity
+    if sub_type == "etf":
+        return "equity"
+
+    return "other"
+
+
 def compute_all_indicators(config: dict, windows: list[str] = None,
                            db_path: str = _DB_PATH) -> dict:
     """全量计算所有指标并保存到 cache/indicator_results.json。
@@ -640,7 +719,7 @@ def compute_all_indicators(config: dict, windows: list[str] = None,
         完整的指标计算结果 dict
     """
     if windows is None:
-        windows = ["1M", "3M", "6M", "1Y"]
+        windows = ["1M", "3M", "6M", "1Y", "3Y", "5Y"]
 
     cache_dir = config.get("paths", {}).get("cache_dir", "cache")
     risk_free_rate = config.get("risk_free_rate", 0.02)

@@ -113,23 +113,29 @@ def _get_stock_a_codes() -> dict:
 
 
 def _get_stock_hk_codes() -> dict:
-    """读取 futu 港股列表。"""
+    """读取 futu 港区列表（港股 + 港区ETF，排除黑名单）。"""
     holdings = load_json("cache/futu/classified_holdings.json")
     if not holdings:
         return {}
     if isinstance(holdings, dict):
         holdings = list(holdings.values())
-    return {h["code"]: h.get("name", "") for h in holdings if h.get("sub_type") == "stock_hk"}
+    _HK_SKIP_LIST = {"HK0000369188"}
+    return {h["code"]: h.get("name", "") for h in holdings
+            if h.get("currency") == "HKD"
+            and h.get("sub_type") in ("stock_hk", "etf")
+            and h.get("code") not in _HK_SKIP_LIST}
 
 
 def _get_stock_us_codes() -> dict:
-    """读取 futu 美股列表。"""
+    """读取 futu 美区列表（美股 + 美区ETF）。"""
     holdings = load_json("cache/futu/classified_holdings.json")
     if not holdings:
         return {}
     if isinstance(holdings, dict):
         holdings = list(holdings.values())
-    return {h["code"]: h.get("name", "") for h in holdings if h.get("sub_type") == "stock_us"}
+    return {h["code"]: h.get("name", "") for h in holdings
+            if h.get("currency") == "USD"
+            and h.get("sub_type") in ("stock_us", "etf")}
 
 
 def check_status():
@@ -175,19 +181,19 @@ def check_status():
     total_need.update(stock_a_codes.keys())
     total_have.update(set(stock_a_codes.keys()) & db_stock_codes)
 
-    # 港股
+    # 港股 + 港区ETF
     hk_codes = _get_stock_hk_codes()
     hk_have = len(set(hk_codes.keys()) & db_stock_codes)
     hk_miss = len(hk_codes) - hk_have
-    print(f"{'futu':<12}{'stock_hk':<12}{len(hk_codes):>6}{hk_have:>8}{hk_miss:>6}")
+    print(f"{'futu':<12}{'hk(stock+etf)':<12}{len(hk_codes):>6}{hk_have:>8}{hk_miss:>6}")
     total_need.update(hk_codes.keys())
     total_have.update(set(hk_codes.keys()) & db_stock_codes)
 
-    # 美股
+    # 美股 + 美区ETF
     us_codes = _get_stock_us_codes()
     us_have = len(set(us_codes.keys()) & db_stock_codes)
     us_miss = len(us_codes) - us_have
-    print(f"{'futu':<12}{'stock_us':<12}{len(us_codes):>6}{us_have:>8}{us_miss:>6}")
+    print(f"{'futu':<12}{'us(stock+etf)':<12}{len(us_codes):>6}{us_have:>8}{us_miss:>6}")
     total_need.update(us_codes.keys())
     total_have.update(set(us_codes.keys()) & db_stock_codes)
 
